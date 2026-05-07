@@ -136,3 +136,107 @@ async def test_get_config_error(monkeypatch):
 
     assert "error" in result
     assert result["tool"] == "get_config"
+
+
+# ---------------------------------------------------------------------------
+# list_routes
+# ---------------------------------------------------------------------------
+
+_ROUTES_CONFIG = {
+    "apps": {
+        "http": {
+            "servers": {
+                "srv0": {
+                    "listen": [":443"],
+                    "routes": [
+                        {
+                            "match": [{"host": ["example.com"]}],
+                            "handle": [
+                                {
+                                    "handler": "reverse_proxy",
+                                    "upstreams": [{"dial": "10.0.0.5:8080"}],
+                                }
+                            ],
+                        },
+                        {
+                            "match": [{"host": ["api.example.com"]}],
+                            "handle": [
+                                {
+                                    "handler": "subroute",
+                                    "routes": [
+                                        {
+                                            "handle": [
+                                                {
+                                                    "handler": "reverse_proxy",
+                                                    "upstreams": [{"dial": "10.0.0.6:9000"}],
+                                                }
+                                            ]
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    ],
+                }
+            }
+        }
+    }
+}
+
+
+async def test_list_routes_success(monkeypatch):
+    async def fake_request(method, path, **kw):
+        return make_response(200, _ROUTES_CONFIG)
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.list_routes()
+
+    routes = result["result"]
+    assert isinstance(routes, list)
+    assert len(routes) == 2
+
+    first = routes[0]
+    assert first["hosts"] == ["example.com"]
+    assert first["upstreams"] == ["10.0.0.5:8080"]
+    assert first["handler"] == "reverse_proxy"
+    assert first["server"] == "srv0"
+
+
+async def test_list_routes_subroute_upstreams(monkeypatch):
+    """Upstreams inside subroute handlers are extracted."""
+    async def fake_request(method, path, **kw):
+        return make_response(200, _ROUTES_CONFIG)
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.list_routes()
+
+    second = result["result"][1]
+    assert second["hosts"] == ["api.example.com"]
+    assert second["upstreams"] == ["10.0.0.6:9000"]
+    assert second["handler"] == "subroute"
+
+
+async def test_list_routes_no_http_app(monkeypatch):
+    """Returns empty list when config has no http app."""
+    async def fake_request(method, path, **kw):
+        return make_response(200, {"apps": {}})
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.list_routes()
+
+    assert result["result"] == []
+
+
+async def test_list_routes_error(monkeypatch):
+    async def fake_request(method, path, **kw):
+        raise httpx.ConnectError("Connection refused")
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.list_routes()
+
+    assert "error" in result
+    assert result["tool"] == "list_routes"

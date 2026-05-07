@@ -56,6 +56,53 @@ async def get_config() -> dict:
         return {"error": str(e), "tool": "get_config", "detail": type(e).__name__}
 
 
+def _extract_upstreams(handles: list) -> list[str]:
+    """Extract upstream dial addresses, recursing into subroute handlers."""
+    upstreams = []
+    for handle in handles:
+        if handle.get("handler") == "reverse_proxy":
+            for up in handle.get("upstreams", []):
+                if "dial" in up:
+                    upstreams.append(up["dial"])
+        elif handle.get("handler") == "subroute":
+            for sub_route in handle.get("routes", []):
+                upstreams.extend(_extract_upstreams(sub_route.get("handle", [])))
+    return upstreams
+
+
+@mcp.tool()
+async def list_routes() -> dict:
+    """List all configured routes (virtual hosts) parsed from Caddy's HTTP app config."""
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json()
+
+        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        routes_out = []
+
+        for server_name, server in servers.items():
+            for route in server.get("routes", []):
+                hosts = []
+                for match in route.get("match", []):
+                    hosts.extend(match.get("host", []))
+
+                handles = route.get("handle", [])
+                handler_type = handles[0].get("handler") if handles else None
+                upstreams = _extract_upstreams(handles)
+
+                routes_out.append({
+                    "server": server_name,
+                    "hosts": hosts,
+                    "handler": handler_type,
+                    "upstreams": upstreams,
+                })
+
+        return {"result": routes_out}
+    except Exception as e:
+        return {"error": str(e), "tool": "list_routes", "detail": type(e).__name__}
+
+
 def main() -> None:
     mcp.run()
 
