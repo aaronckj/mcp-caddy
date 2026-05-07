@@ -372,3 +372,111 @@ async def test_get_certificates_error(monkeypatch):
 
     assert "error" in result
     assert result["tool"] == "get_certificates"
+
+
+# ---------------------------------------------------------------------------
+# adapt_config
+# ---------------------------------------------------------------------------
+
+async def test_adapt_config_success(monkeypatch):
+    caddyfile = "example.com { reverse_proxy localhost:8080 }"
+    adapted = {"apps": {"http": {"servers": {"srv0": {"routes": []}}}}}
+
+    async def fake_request(method, path, **kw):
+        assert method == "POST"
+        assert path == "/adapt"
+        assert kw.get("json") == {"adapter": "caddyfile", "body": caddyfile}
+        return make_response(200, adapted)
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.adapt_config(caddyfile=caddyfile)
+
+    assert "apps" in result["result"]
+
+
+async def test_adapt_config_syntax_error(monkeypatch):
+    async def fake_request(method, path, **kw):
+        return make_response(400, {"error": "Caddyfile syntax error"})
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.adapt_config(caddyfile="invalid {{{")
+
+    assert "error" in result
+    assert result["tool"] == "adapt_config"
+
+
+async def test_adapt_config_network_error(monkeypatch):
+    async def fake_request(method, path, **kw):
+        raise httpx.ConnectError("Connection refused")
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.adapt_config(caddyfile="example.com {}")
+
+    assert "error" in result
+    assert result["tool"] == "adapt_config"
+
+
+# ---------------------------------------------------------------------------
+# reload
+# ---------------------------------------------------------------------------
+
+async def test_reload_json_string(monkeypatch):
+    """reload() with a JSON string POSTs directly without file I/O."""
+    config = {"apps": {}}
+    config_str = '{"apps": {}}'
+
+    async def fake_request(method, path, **kw):
+        assert method == "POST"
+        assert path == "/load"
+        assert kw.get("json") == config
+        return make_response(200, {})
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.reload(source=config_str)
+
+    assert result["result"]["reloaded"] is True
+
+
+async def test_reload_file_path(monkeypatch, tmp_path):
+    """reload() with a file path reads the file and POSTs its contents."""
+    import json
+    config = {"apps": {"http": {}}}
+    config_file = tmp_path / "caddy.json"
+    config_file.write_text(json.dumps(config))
+
+    async def fake_request(method, path, **kw):
+        assert method == "POST"
+        assert path == "/load"
+        assert kw.get("json") == config
+        return make_response(200, {})
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.reload(source=str(config_file))
+
+    assert result["result"]["reloaded"] is True
+
+
+async def test_reload_invalid_json(monkeypatch):
+    """reload() returns error dict when source is not valid JSON and not a valid file."""
+    import mcp_caddy.server as srv
+    result = await srv.reload(source="not json at all")
+
+    assert "error" in result
+    assert result["tool"] == "reload"
+
+
+async def test_reload_network_error(monkeypatch):
+    async def fake_request(method, path, **kw):
+        raise httpx.ConnectError("Connection refused")
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.reload(source='{"apps": {}}')
+
+    assert "error" in result
+    assert result["tool"] == "reload"

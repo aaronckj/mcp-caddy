@@ -150,6 +150,39 @@ async def get_certificates() -> dict:
         return {"error": str(e), "tool": "get_certificates", "detail": type(e).__name__}
 
 
+@mcp.tool()
+async def adapt_config(caddyfile: str) -> dict:
+    """Convert a Caddyfile snippet to JSON config using Caddy's built-in adapter."""
+    try:
+        resp = await _request(
+            "POST",
+            "/adapt",
+            json={"adapter": "caddyfile", "body": caddyfile},
+        )
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return {"error": str(e), "tool": "adapt_config", "detail": type(e).__name__}
+
+
+@mcp.tool()
+async def reload(source: str) -> dict:
+    """Reload Caddy config. source: raw JSON string (starts with '{') or path to a JSON config file."""
+    try:
+        import json as _json
+        if source.lstrip().startswith("{"):
+            config_data = _json.loads(source)
+        else:
+            with open(source) as f:
+                config_data = _json.load(f)
+
+        resp = await _request("POST", "/load", json=config_data)
+        resp.raise_for_status()
+        return {"result": {"reloaded": True}}
+    except Exception as e:
+        return {"error": str(e), "tool": "reload", "detail": type(e).__name__}
+
+
 def main() -> None:
     mcp.run()
 
