@@ -289,3 +289,86 @@ async def test_list_upstreams_error(monkeypatch):
 
     assert "error" in result
     assert result["tool"] == "list_upstreams"
+
+
+# ---------------------------------------------------------------------------
+# get_certificates
+# ---------------------------------------------------------------------------
+
+_TLS_CONFIG = {
+    "apps": {
+        "tls": {
+            "automation": {
+                "policies": [
+                    {
+                        "subjects": ["example.com", "www.example.com"],
+                        "issuers": [
+                            {
+                                "module": "acme",
+                                "ca": "https://acme-v02.api.letsencrypt.org/directory",
+                                "email": "admin@example.com",
+                            }
+                        ],
+                    },
+                    {
+                        "subjects": ["internal.example.com"],
+                        "issuers": [{"module": "acme", "ca": "https://acme.zerossl.com/v2/DV90"}],
+                    },
+                ]
+            }
+        }
+    }
+}
+
+
+async def test_get_certificates_success(monkeypatch):
+    async def fake_request(method, path, **kw):
+        return make_response(200, _TLS_CONFIG)
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.get_certificates()
+
+    certs = result["result"]
+    assert isinstance(certs, list)
+    assert len(certs) == 2
+    assert certs[0]["subjects"] == ["example.com", "www.example.com"]
+    assert certs[0]["issuers"][0]["module"] == "acme"
+    assert certs[0]["issuers"][0]["ca"] == "https://acme-v02.api.letsencrypt.org/directory"
+    assert certs[0]["issuers"][0]["email"] == "admin@example.com"
+
+
+async def test_get_certificates_no_tls_app(monkeypatch):
+    """Returns empty list when config has no tls app."""
+    async def fake_request(method, path, **kw):
+        return make_response(200, {"apps": {"http": {}}})
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.get_certificates()
+
+    assert result["result"] == []
+
+
+async def test_get_certificates_no_policies(monkeypatch):
+    """Returns empty list when tls app has no automation policies."""
+    async def fake_request(method, path, **kw):
+        return make_response(200, {"apps": {"tls": {"automation": {}}}})
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.get_certificates()
+
+    assert result["result"] == []
+
+
+async def test_get_certificates_error(monkeypatch):
+    async def fake_request(method, path, **kw):
+        raise httpx.ConnectError("Connection refused")
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.get_certificates()
+
+    assert "error" in result
+    assert result["tool"] == "get_certificates"

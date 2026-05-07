@@ -114,6 +114,42 @@ async def list_upstreams() -> dict:
         return {"error": str(e), "tool": "list_upstreams", "detail": type(e).__name__}
 
 
+@mcp.tool()
+async def get_certificates() -> dict:
+    """List TLS certificate automation policies: subjects, ACME issuers, and CAs."""
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json()
+
+        policies = (
+            config.get("apps", {})
+            .get("tls", {})
+            .get("automation", {})
+            .get("policies", [])
+        )
+
+        certs = []
+        for policy in policies:
+            issuers = []
+            for issuer in policy.get("issuers", []):
+                issuer_info: dict = {"module": issuer.get("module")}
+                if "ca" in issuer:
+                    issuer_info["ca"] = issuer["ca"]
+                if "email" in issuer:
+                    issuer_info["email"] = issuer["email"]
+                issuers.append(issuer_info)
+
+            certs.append({
+                "subjects": policy.get("subjects", []),
+                "issuers": issuers,
+            })
+
+        return {"result": certs}
+    except Exception as e:
+        return {"error": str(e), "tool": "get_certificates", "detail": type(e).__name__}
+
+
 def main() -> None:
     mcp.run()
 
