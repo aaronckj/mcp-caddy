@@ -34,6 +34,28 @@ async def _request(method: str, path: str, **kwargs) -> httpx.Response:
         return await client.request(method, f"{host}{path}", **kwargs)
 
 
+@mcp.tool()
+async def server_info() -> dict:
+    """Get Caddy server version and list of loaded modules."""
+    try:
+        resp = await _request("GET", "/")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return {"error": str(e), "tool": "server_info", "detail": type(e).__name__}
+
+
+@mcp.tool()
+async def get_config() -> dict:
+    """Get the full Caddy configuration as JSON."""
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return {"error": str(e), "tool": "get_config", "detail": type(e).__name__}
+
+
 def main() -> None:
     mcp.run()
 
