@@ -103,6 +103,17 @@ async def list_routes() -> dict:
         return {"error": str(e), "tool": "list_routes", "detail": type(e).__name__}
 
 
+@mcp.tool()
+async def list_upstreams() -> dict:
+    """List all reverse proxy upstreams with their health status and request counts."""
+    try:
+        resp = await _request("GET", "/reverse_proxy/upstreams")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return {"error": str(e), "tool": "list_upstreams", "detail": type(e).__name__}
+
+
 def main() -> None:
     mcp.run()
 

@@ -240,3 +240,52 @@ async def test_list_routes_error(monkeypatch):
 
     assert "error" in result
     assert result["tool"] == "list_routes"
+
+
+# ---------------------------------------------------------------------------
+# list_upstreams
+# ---------------------------------------------------------------------------
+
+async def test_list_upstreams_success(monkeypatch):
+    payload = [
+        {"address": "10.0.0.5:8080", "num_requests": 3, "fails": 0},
+        {"address": "10.0.0.6:9000", "num_requests": 0, "fails": 1},
+    ]
+
+    async def fake_request(method, path, **kw):
+        assert method == "GET"
+        assert path == "/reverse_proxy/upstreams"
+        return make_response(200, payload)
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.list_upstreams()
+
+    upstreams = result["result"]
+    assert isinstance(upstreams, list)
+    assert len(upstreams) == 2
+    assert upstreams[0]["address"] == "10.0.0.5:8080"
+    assert upstreams[1]["fails"] == 1
+
+
+async def test_list_upstreams_empty(monkeypatch):
+    async def fake_request(method, path, **kw):
+        return make_response(200, [])
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.list_upstreams()
+
+    assert result["result"] == []
+
+
+async def test_list_upstreams_error(monkeypatch):
+    async def fake_request(method, path, **kw):
+        raise httpx.ConnectError("Connection refused")
+
+    import mcp_caddy.server as srv
+    monkeypatch.setattr(srv, "_request", fake_request)
+    result = await srv.list_upstreams()
+
+    assert "error" in result
+    assert result["tool"] == "list_upstreams"
