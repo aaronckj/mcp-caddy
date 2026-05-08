@@ -142,6 +142,22 @@ async def create_server(server_name: str, listen: str = ":443") -> dict:
         return _err(e, "create_server")
 
 
+def _validate_upstream_dial(upstream: str) -> str | None:
+    """Return an error string if upstream is not a valid Caddy dial address, else None."""
+    if upstream.startswith("unix/"):
+        return None
+    if ":" not in upstream:
+        return f"upstream '{upstream}' must be in format host:port (e.g. 'localhost:8080') or unix//path/to/socket"
+    port_str = upstream.rsplit(":", 1)[1]
+    try:
+        port = int(port_str)
+        if not 1 <= port <= 65535:
+            return f"upstream port {port} out of range 1-65535"
+    except ValueError:
+        return f"upstream '{upstream}' has non-numeric port '{port_str}'"
+    return None
+
+
 def _extract_upstreams(handles: list) -> list[str]:
     """Extract upstream dial addresses, recursing into subroute handlers."""
     upstreams = []
@@ -204,6 +220,8 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_reverse_proxy_route"}
     upstream = upstream.strip()
+    if err := _validate_upstream_dial(upstream):
+        return {"error": err, "tool": "add_reverse_proxy_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -250,6 +268,8 @@ async def add_path_route(path: str, upstream: str, server_name: str = "") -> dic
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_path_route"}
     upstream = upstream.strip()
+    if err := _validate_upstream_dial(upstream):
+        return {"error": err, "tool": "add_path_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -402,6 +422,24 @@ async def list_upstreams() -> dict:
         return _err(e, "list_upstreams")
     except Exception as e:
         return _err(e, "list_upstreams")
+
+
+@mcp.tool()
+async def mark_upstream_health(upstream_address: str, healthy: bool) -> dict:
+    """Manually override the health state of a reverse proxy upstream. upstream_address: the dial address as shown by list_upstreams (e.g. '10.0.0.5:8080'). healthy: True to mark healthy, False to mark unhealthy. Persists until Caddy's active health checks re-evaluate or the server restarts."""
+    if not upstream_address or not upstream_address.strip():
+        return {"error": "upstream_address must not be empty", "tool": "mark_upstream_health"}
+    upstream_address = upstream_address.strip()
+    try:
+        resp = await _request(
+            "POST",
+            "/reverse_proxy/upstreams/health",
+            json={"address": upstream_address, "healthy": healthy},
+        )
+        resp.raise_for_status()
+        return {"result": {"upstream": upstream_address, "healthy": healthy}}
+    except Exception as e:
+        return _err(e, "mark_upstream_health")
 
 
 @mcp.tool()
@@ -1308,6 +1346,9 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
     upstream_list = [u.strip() for u in upstreams.split(",") if u.strip()]
     if len(upstream_list) < 2:
         return {"error": "add_load_balanced_route requires at least 2 upstreams. Use add_reverse_proxy_route for a single backend.", "tool": "add_load_balanced_route"}
+    for u in upstream_list:
+        if err := _validate_upstream_dial(u):
+            return {"error": err, "tool": "add_load_balanced_route"}
     _VALID_POLICIES = {"round_robin", "least_conn", "ip_hash", "first", "random", "random_choose", "cookie"}
     lb_policy = lb_policy.strip().lower()
     if lb_policy not in _VALID_POLICIES:
@@ -1543,6 +1584,20 @@ async def get_pki_ca_certificates(ca_name: str = "local") -> dict:
         return {"result": resp.json()}
     except Exception as e:
         return _err(e, "get_pki_ca_certificates")
+
+
+@mcp.tool()
+async def renew_pki_ca(ca_name: str = "local") -> dict:
+    """Force immediate renewal of a Caddy PKI certificate authority's root and intermediate certificates. Use this when the CA certificate is about to expire or has been revoked. ca_name: CA name (default 'local'). Use list_pki_cas to find available CAs."""
+    ca_name = (ca_name or "local").strip()
+    if not ca_name:
+        return {"error": "ca_name must not be empty", "tool": "renew_pki_ca"}
+    try:
+        resp = await _request("POST", f"/pki/ca/{ca_name}/renew")
+        resp.raise_for_status()
+        return {"result": {"ca_name": ca_name, "renewed": True}}
+    except Exception as e:
+        return _err(e, "renew_pki_ca")
 
 
 @mcp.tool()
@@ -1855,6 +1910,35 @@ async def add_error_handler_route(
         return {"result": {"server": server_name, "host": host, "status_codes": codes}}
     except Exception as e:
         return _err(e, "add_error_handler_route")
+
+
+@mcp.tool()
+async def delete_error_handler_route(host: str, server_name: str = "") -> dict:
+    """Remove all error handler routes for a specific host from the Caddy error handler config. Clears the entire errors.routes block for that host. Use add_error_handler_route to re-add them."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "delete_error_handler_route"}
+    host = host.strip()
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/errors")
+        if get_resp.status_code != 200:
+            return {"result": {"server": server_name, "host": host, "removed": 0}}
+        errors_cfg = get_resp.json() or {}
+        routes = errors_cfg.get("routes", [])
+        original_count = len(routes)
+        errors_cfg["routes"] = [
+            r for r in routes
+            if host not in [h for m in r.get("match", []) for h in m.get("host", [])]
+        ]
+        removed = original_count - len(errors_cfg["routes"])
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/errors", json=errors_cfg)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "removed": removed}}
+    except Exception as e:
+        return _err(e, "delete_error_handler_route")
 
 
 @mcp.tool()
