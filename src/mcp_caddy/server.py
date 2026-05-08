@@ -1354,6 +1354,60 @@ async def list_modules() -> dict:
 
 
 @mcp.tool()
+async def get_server_timeouts(server_name: str) -> dict:
+    """Get the current request/response timeout settings for a Caddy HTTP server block: read_timeout, read_header_timeout, write_timeout, and idle_timeout. Returns only the fields that are explicitly configured — absent fields use Caddy's default (no timeout). Use set_server_timeouts to change them."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "get_server_timeouts"}
+    server_name = server_name.strip()
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}")
+        resp.raise_for_status()
+        server_cfg = resp.json() or {}
+        timeout_keys = ["read_timeout", "read_header_timeout", "write_timeout", "idle_timeout"]
+        configured = {k: server_cfg[k] for k in timeout_keys if k in server_cfg}
+        return {"result": {"server": server_name, "timeouts": configured, "note": "absent fields = no timeout (Caddy default)"}}
+    except Exception as e:
+        return _err(e, "get_server_timeouts")
+
+
+@mcp.tool()
+async def add_websocket_route(host: str, upstream: str, server_name: str = "", path_prefix: str = "") -> dict:
+    """Add a reverse proxy route optimized for WebSocket and Server-Sent Events connections. Sets flush_interval=-1 to disable response buffering, which is required for WebSocket upgrades and streaming responses to work correctly. Caddy automatically handles the Connection: Upgrade and Upgrade: websocket headers. host: domain to match. upstream: backend WebSocket server (e.g. 'localhost:8080'). path_prefix: optional URL path to match (e.g. '/ws' or '/socket.io/*'). server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_websocket_route"}
+    host = host.strip()
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_websocket_route"}
+    upstream = upstream.strip()
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_websocket_route"}
+            server_name = next(iter(servers))
+        match_rule: dict = {"host": [host]}
+        if path_prefix and path_prefix.strip():
+            p = path_prefix.strip().rstrip("/")
+            match_rule["path"] = [p, p + "/*"] if not p.endswith("*") else [p]
+        route = {
+            "match": [match_rule],
+            "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{"dial": upstream}],
+                "flush_interval": -1,
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "flush_interval": -1, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_websocket_route")
+
+
+@mcp.tool()
 async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:9000", root: str = "", server_name: str = "") -> dict:
     """Add a PHP FastCGI route for serving PHP applications via PHP-FPM. host: domain to match. php_fpm_address: PHP-FPM socket or address — TCP (e.g. '127.0.0.1:9000') or Unix socket (e.g. 'unix//run/php/php8.2-fpm.sock'). root: filesystem root for PHP files (e.g. '/var/www/html'). server_name: auto-detects first server if empty. Adds a subroute that strips path info and proxies *.php requests via FastCGI, then falls back to static file_server for non-PHP assets."""
     if not host or not host.strip():
