@@ -2149,6 +2149,53 @@ async def add_cache_headers_route(
         return _err(e, "add_cache_headers_route")
 
 
+@mcp.tool()
+async def add_retry_route(
+    host: str,
+    upstream: str,
+    retries: int = 3,
+    max_fails: int = 3,
+    fail_duration: int = 10,
+    server_name: str = "",
+) -> dict:
+    """Add a reverse proxy route with automatic retry on 502/503/504 responses and passive health checking. retries: number of times to retry failed requests. max_fails: consecutive failures before marking upstream unhealthy. fail_duration: seconds to consider an upstream unhealthy after max_fails. Unhealthy upstreams are retried after fail_duration passes."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_retry_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_retry_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{"dial": upstream.strip()}],
+                "load_balancing": {
+                    "retries": retries,
+                    "retry_match": [{"status_code": [502, 503, 504]}],
+                },
+                "health_checks": {
+                    "passive": {
+                        "fail_duration": f"{fail_duration}s",
+                        "max_fails": max_fails,
+                        "unhealthy_status": [502, 503, 504],
+                    }
+                },
+            }],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "upstream": upstream, "retries": retries, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_retry_route")
+
+
 def main() -> None:
     mcp.run()
 
