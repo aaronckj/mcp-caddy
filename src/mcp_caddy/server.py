@@ -2196,6 +2196,81 @@ async def add_retry_route(
         return _err(e, "add_retry_route")
 
 
+@mcp.tool()
+async def add_strip_prefix_route(
+    host: str,
+    path_prefix: str,
+    upstream: str,
+    server_name: str = "",
+) -> dict:
+    """Add a route that strips a path prefix before proxying — for services deployed at a subpath that expect requests at '/'. Example: strip '/myapp' so '/myapp/api/v1' becomes '/api/v1' at the upstream. path_prefix: the prefix to remove (e.g. '/myapp'). Requests not matching the prefix fall through."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_strip_prefix_route"}
+    if not path_prefix or not path_prefix.strip():
+        return {"error": "path_prefix must not be empty", "tool": "add_strip_prefix_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_strip_prefix_route"}
+    prefix = path_prefix.strip().rstrip("/")
+    if not prefix.startswith("/"):
+        prefix = "/" + prefix
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()], "path": [prefix + "/*", prefix]}],
+            "handle": [
+                {"handler": "rewrite", "strip_path_prefix": prefix},
+                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]},
+            ],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "prefix": prefix, "upstream": upstream, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_strip_prefix_route")
+
+
+@mcp.tool()
+async def add_header_match_route(
+    host: str,
+    header_name: str,
+    header_value: str,
+    upstream: str,
+    server_name: str = "",
+) -> dict:
+    """Add a route that only matches requests containing a specific header value, proxying to a different upstream. Useful for canary deployments, A/B testing, or internal routing. header_name: request header to match (e.g. 'X-Canary'). header_value: exact value to match. Non-matching requests fall through to other routes."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_header_match_route"}
+    if not header_name or not header_name.strip():
+        return {"error": "header_name must not be empty", "tool": "add_header_match_route"}
+    if not header_value or not header_value.strip():
+        return {"error": "header_value must not be empty", "tool": "add_header_match_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_header_match_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()], "header": {header_name.strip(): [header_value.strip()]}}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.insert(0, route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "match_header": f"{header_name}: {header_value}", "upstream": upstream, "route_index": 0}}
+    except Exception as e:
+        return _err(e, "add_header_match_route")
+
+
 def main() -> None:
     mcp.run()
 
