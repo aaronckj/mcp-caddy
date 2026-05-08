@@ -626,8 +626,11 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
 
     try:
         pol_resp = await _request("GET", "/config/apps/tls/automation/policies")
-        pol_resp.raise_for_status()
-        policies = pol_resp.json() or []
+        if pol_resp.status_code == 404:
+            policies = []
+        else:
+            pol_resp.raise_for_status()
+            policies = pol_resp.json() or []
         existing_subjects = {s for p in policies for s in p.get("subjects", [])}
         overlap = [s for s in subject_list if s in existing_subjects]
         if overlap:
@@ -2028,8 +2031,8 @@ async def add_redirect_route(
     """Add a redirect route. If target is empty, redirects HTTP → HTTPS (same host, same URI). target: full URL or {scheme}://{host}{uri} template. status_code: 301 (permanent) or 302 (temporary). path_prefix: optional path to restrict redirect scope."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_redirect_route"}
-    if not (100 <= status_code <= 599):
-        return {"error": f"status_code must be 100-599, got {status_code}", "tool": "add_redirect_route"}
+    if status_code not in {301, 302, 307, 308}:
+        return {"error": f"status_code must be 301, 302, 307, or 308 for a redirect, got {status_code}", "tool": "add_redirect_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
