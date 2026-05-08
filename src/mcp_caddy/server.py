@@ -2461,6 +2461,35 @@ async def add_cookie_match_route(
         return _err(e, "add_cookie_match_route")
 
 
+@mcp.tool()
+async def add_not_found_route(
+    host: str,
+    body: str = "404 Not Found",
+    content_type: str = "text/plain; charset=utf-8",
+    server_name: str = "",
+) -> dict:
+    """Add a catch-all route that returns 404 for a host, with a custom response body. Useful for explicitly handling unmatched paths instead of relying on Caddy's default 404. Appended at end so other routes still match first. body: response body text or JSON. content_type: response Content-Type header."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_not_found_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "static_response", "status_code": 404, "headers": {"Content-Type": [content_type]}, "body": body}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "status_code": 404, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_not_found_route")
+
+
 def main() -> None:
     mcp.run()
 
