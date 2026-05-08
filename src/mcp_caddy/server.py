@@ -377,7 +377,7 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
             "handle": [{
                 "handler": "static_response",
                 "status_code": str(status_code),
-                "headers": {"Location": to_url},
+                "headers": {"Location": [to_url]},
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
@@ -799,7 +799,7 @@ async def add_https_redirect(host: str, http_server_name: str = "") -> dict:
             "handle": [{
                 "handler": "static_response",
                 "status_code": "301",
-                "headers": {"Location": "https://{http.request.host}{http.request.uri}"},
+                "headers": {"Location": ["https://{http.request.host}{http.request.uri}"]},
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{target_server}/routes")
@@ -2049,7 +2049,7 @@ async def add_redirect_route(
             match["path"] = [prefix + "/*", prefix]
         route = {
             "match": [match],
-            "handle": [{"handler": "static_response", "status_code": str(status_code), "headers": {"Location": redirect_to}}],
+            "handle": [{"handler": "static_response", "status_code": str(status_code), "headers": {"Location": [redirect_to]}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         if get_resp.status_code == 404:
