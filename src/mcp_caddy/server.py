@@ -2639,19 +2639,22 @@ async def enable_server_access_log(
     try:
         encoder: dict = {"format": format}
         if output_file and output_file.strip():
-            output: dict = {"output": "file", "filename": output_file.strip(), "roll_size_mb": 100, "roll_keep": 10}
+            writer: dict = {"output": "file", "filename": output_file.strip(), "roll_size_mb": 100, "roll_keep": 10}
         else:
-            output = {"output": "stderr"}
-        logs_config = {
-            "default_logger_name": "access",
-            "logger_names": {},
-            "access": {"writer": output, "encoder": encoder},
-        }
-        resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/logs", json=logs_config)
+            writer = {"output": "stderr"}
+        # Step 1: configure the global named log sink at /config/logging/logs/access
+        log_sink = {"writer": writer, "encoder": encoder}
+        sink_resp = await _request("PUT", "/config/logging/logs/access", json=log_sink)
+        sink_resp.raise_for_status()
+        # Step 2: point the server's access log at that named sink
+        server_logs = {"default_logger_name": "access"}
+        resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/logs", json=server_logs)
         resp.raise_for_status()
         return {"result": {"server": server_name, "format": format, "output": output_file or "stderr", "enabled": True}}
     except Exception as e:
-        return _err(e, "enable_server_access_log")
+        err = _err(e, "enable_server_access_log")
+        err["server_name"] = server_name
+        return err
 
 
 @mcp.tool()
