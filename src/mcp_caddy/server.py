@@ -14,20 +14,6 @@ _DEFAULT_TIMEOUT = 30.0
 
 
 async def _request(method: str, path: str, **kwargs) -> httpx.Response:
-    """Make an HTTP request to Caddy admin API.
-
-    Args:
-        method: HTTP method (GET, POST, PUT, DELETE, etc.)
-        path: API path (e.g., "/config/")
-        **kwargs: Additional arguments to pass to httpx.AsyncClient.request()
-
-    Returns:
-        httpx.Response object
-
-    Environment variables:
-        CADDY_HOST: Caddy admin API host (default: http://localhost:2019)
-        CADDY_TIMEOUT: Request timeout in seconds (default: 30.0)
-    """
     host = os.environ.get("CADDY_HOST", _DEFAULT_HOST)
     timeout = float(os.environ.get("CADDY_TIMEOUT", str(_DEFAULT_TIMEOUT)))
     async with httpx.AsyncClient(timeout=timeout) as client:
@@ -157,7 +143,9 @@ async def adapt_config(caddyfile: str) -> dict:
         resp = await _request(
             "POST",
             "/adapt",
-            json={"adapter": "caddyfile", "body": caddyfile},
+            content=caddyfile.encode(),
+            params={"adapter": "caddyfile"},
+            headers={"Content-Type": "text/caddyfile"},
         )
         resp.raise_for_status()
         return {"result": resp.json()}
