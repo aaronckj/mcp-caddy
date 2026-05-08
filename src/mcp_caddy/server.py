@@ -1138,6 +1138,11 @@ async def add_cors_route(
             "tool": "add_cors_route",
         }
     methods = allow_methods.strip() or "GET,POST,PUT,DELETE,OPTIONS"
+    _valid_http_methods = {"GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH"}
+    method_list = [m.strip().upper() for m in methods.split(",") if m.strip()]
+    invalid_methods = [m for m in method_list if m not in _valid_http_methods]
+    if invalid_methods:
+        return {"error": f"Invalid HTTP methods in allow_methods: {invalid_methods}. Valid: {', '.join(sorted(_valid_http_methods))}", "tool": "add_cors_route"}
     hdrs = allow_headers.strip() or "Content-Type,Authorization"
     max_age = max(0, max_age)
     cors_headers = {
