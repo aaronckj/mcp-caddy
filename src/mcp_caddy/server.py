@@ -2543,6 +2543,53 @@ async def add_circuit_breaker_route(
         return _err(e, "add_circuit_breaker_route")
 
 
+@mcp.tool()
+async def add_active_health_check_route(
+    host: str,
+    upstream: str,
+    health_path: str = "/health",
+    interval: str = "30s",
+    timeout: str = "5s",
+    expect_status: int = 200,
+    server_name: str = "",
+) -> dict:
+    """Add a reverse proxy route with active health checking: Caddy periodically polls the upstream at health_path and stops sending traffic if it fails. Distinct from passive circuit breaking — active checks run independently of traffic. health_path: path to poll (e.g. '/health', '/ping'). interval: poll frequency (e.g. '30s', '1m'). timeout: max wait for health response. expect_status: expected HTTP status (default 200)."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_active_health_check_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_active_health_check_route"}
+    if expect_status < 100 or expect_status > 599:
+        return {"error": "expect_status must be a valid HTTP status code (100-599)", "tool": "add_active_health_check_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{"dial": upstream.strip()}],
+                "health_checks": {
+                    "active": {
+                        "path": health_path.strip() if health_path.strip().startswith("/") else "/" + health_path.strip(),
+                        "interval": interval,
+                        "timeout": timeout,
+                        "expect_status": expect_status,
+                    }
+                },
+            }],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "upstream": upstream, "health_path": health_path, "interval": interval, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_active_health_check_route")
+
+
 def main() -> None:
     mcp.run()
 
