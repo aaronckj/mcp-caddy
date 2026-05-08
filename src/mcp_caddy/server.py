@@ -1198,6 +1198,8 @@ async def add_cors_route(
     except Exception as e:
         err = _err(e, "add_cors_route")
         err["host"] = host
+        if upstream and upstream.strip():
+            err["upstream"] = upstream.strip()
         return err
 
 
@@ -1847,7 +1849,9 @@ async def add_redirect_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "redirect_to": redirect_to, "status_code": status_code, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_redirect_route")
+        err = _err(e, "add_redirect_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
@@ -1916,7 +1920,10 @@ async def add_forward_auth_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "auth_url": auth_url, "upstream": upstream, "copy_headers": headers}}
     except Exception as e:
-        return _err(e, "add_forward_auth_route")
+        err = _err(e, "add_forward_auth_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -1977,7 +1984,9 @@ async def add_error_handler_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "status_codes": codes}}
     except Exception as e:
-        return _err(e, "add_error_handler_route")
+        err = _err(e, "add_error_handler_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
@@ -2121,7 +2130,9 @@ async def add_static_file_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "root": root, "browse": browse, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_static_file_route")
+        err = _err(e, "add_static_file_route")
+        err["host"] = host
+        return err
 
 
 
@@ -2164,7 +2175,9 @@ async def add_response_set_header_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "set_headers": set_map, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_response_set_header_route")
+        err = _err(e, "add_response_set_header_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
@@ -2223,7 +2236,10 @@ async def add_sse_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "upstream": upstream, "flush_interval": -1, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_sse_route")
+        err = _err(e, "add_sse_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -2263,7 +2279,9 @@ async def add_security_headers_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "headers_set": list(set_map.keys()), "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_security_headers_route")
+        err = _err(e, "add_security_headers_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
@@ -2300,7 +2318,9 @@ async def add_cache_headers_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "path_pattern": path_pattern, "cache_control": cc_value, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_cache_headers_route")
+        err = _err(e, "add_cache_headers_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
@@ -2357,7 +2377,10 @@ async def add_retry_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "upstream": upstream, "retries": retries, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_retry_route")
+        err = _err(e, "add_retry_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -2443,7 +2466,10 @@ async def add_header_match_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "match_header": f"{header_name}: {header_value}", "upstream": upstream, "route_index": 0}}
     except Exception as e:
-        return _err(e, "add_header_match_route")
+        err = _err(e, "add_header_match_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -2494,7 +2520,10 @@ async def add_method_match_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "methods": method_list, "upstream": upstream, "route_index": 0}}
     except Exception as e:
-        return _err(e, "add_method_match_route")
+        err = _err(e, "add_method_match_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -2534,7 +2563,10 @@ async def add_query_match_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "match_query": f"{query_param}={query_value}", "upstream": upstream, "route_index": 0}}
     except Exception as e:
-        return _err(e, "add_query_match_route")
+        err = _err(e, "add_query_match_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -2564,7 +2596,9 @@ async def add_request_body_limit(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "max_size_bytes": max_size_bytes, "route_index": 0}}
     except Exception as e:
-        return _err(e, "add_request_body_limit")
+        err = _err(e, "add_request_body_limit")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
@@ -2649,7 +2683,10 @@ async def add_cookie_match_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "cookie": f"{cookie_name}={cookie_value}", "upstream": upstream, "route_index": 0}}
     except Exception as e:
-        return _err(e, "add_cookie_match_route")
+        err = _err(e, "add_cookie_match_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -2678,7 +2715,9 @@ async def add_not_found_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "status_code": 404, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_not_found_route")
+        err = _err(e, "add_not_found_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
