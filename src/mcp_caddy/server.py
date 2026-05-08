@@ -1525,6 +1525,8 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
     selection_policy: dict = {"module": lb_policy}
     if lb_policy == "cookie":
         selection_policy["name"] = cookie_name.strip() or "lb_cookie"
+    elif lb_policy == "random_choose":
+        selection_policy["choose"] = min(2, len(upstream_list))
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -1842,7 +1844,7 @@ async def add_global_headers(headers: str, server_name: str = "") -> dict:
     if not headers or not headers.strip():
         return {"error": "headers must not be empty", "tool": "add_global_headers"}
     parsed: dict[str, list[str]] = {}
-    for raw in re.split(r"[;\n]", headers):
+    for raw in headers.splitlines():
         raw = raw.strip()
         if not raw:
             continue
@@ -1865,10 +1867,10 @@ async def add_global_headers(headers: str, server_name: str = "") -> dict:
         else:
             get_resp.raise_for_status()
             routes = get_resp.json() or []
-        routes.append(route)
+        routes.insert(0, route)  # global headers must precede terminal host routes
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
-        return {"result": {"headers": parsed, "server": server_name, "scope": "global", "route_index": len(routes) - 1}}
+        return {"result": {"headers": parsed, "server": server_name, "scope": "global", "route_index": 0}}
     except Exception as e:
         err = _err(e, "add_global_headers"); err["server_name"] = server_name; return err
 
