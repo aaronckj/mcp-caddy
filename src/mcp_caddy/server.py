@@ -1781,6 +1781,14 @@ async def add_trusted_proxies(ranges: str = "private_ranges", server_name: str =
             trusted: dict = {"source": "private_ranges"}
         else:
             cidr_list = [r.strip() for r in ranges.split(",") if r.strip()]
+            if not cidr_list:
+                return {"error": "ranges must contain at least one CIDR or 'private_ranges'", "tool": "add_trusted_proxies"}
+            import ipaddress as _ipa
+            for cidr in cidr_list:
+                try:
+                    _ipa.ip_network(cidr, strict=False)
+                except ValueError as ve:
+                    return {"error": f"Invalid CIDR '{cidr}': {ve}", "tool": "add_trusted_proxies"}
             trusted = {"source": "static", "ranges": cidr_list}
         patch_resp = await _request("PATCH", f"/config/apps/http/servers/{server_name}/trusted_proxies", json=trusted)
         if patch_resp.status_code == 404:
