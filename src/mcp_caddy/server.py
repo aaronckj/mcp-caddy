@@ -857,47 +857,42 @@ async def update_log_config(config_json: str) -> dict:
 
 
 @mcp.tool()
-async def add_basicauth_route(host: str, username: str, hashed_password: str, upstream: str, server_name: str = "") -> dict:
-    """Add a reverse proxy route protected by HTTP basic authentication. hashed_password: bcrypt hash of the password (generate with: caddy hash-password --plaintext 'yourpassword'). upstream: backend address. server_name: auto-detects first server if empty."""
+async def add_basicauth_route(host: str, username: str, hashed_password: str, upstream: str = "", server_name: str = "") -> dict:
+    """Add a route protected by HTTP Basic Authentication. hashed_password: bcrypt hash — generate with: caddy hash-password --plaintext 'yourpassword'. upstream: backend to proxy authenticated requests to (e.g. 'localhost:8080'); if empty, returns 200 OK. WARNING: Basic auth sends credentials on every request — only use over HTTPS."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_basicauth_route"}
-    host = host.strip()
     if not username or not username.strip():
         return {"error": "username must not be empty", "tool": "add_basicauth_route"}
-    username = username.strip()
     if not hashed_password or not hashed_password.strip():
-        return {"error": "hashed_password must not be empty", "tool": "add_basicauth_route"}
-    hashed_password = hashed_password.strip()
-    if not upstream or not upstream.strip():
-        return {"error": "upstream must not be empty", "tool": "add_basicauth_route"}
-    upstream = upstream.strip()
+        return {"error": "hashed_password must not be empty — provide a bcrypt hash", "tool": "add_basicauth_route"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_basicauth_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
+        proxy_handler = (
+            {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}
+            if upstream and upstream.strip()
+            else {"handler": "static_response", "status_code": 200, "body": "Authenticated"}
+        )
         route = {
-            "match": [{"host": [host]}],
+            "match": [{"host": [host.strip()]}],
             "handle": [
                 {
                     "handler": "authentication",
                     "providers": {
                         "http_basic": {
                             "hash": {"algorithm": "bcrypt"},
-                            "accounts": [{"username": username, "password": hashed_password}],
+                            "accounts": [{"username": username.strip(), "password": hashed_password.strip()}],
                         }
                     },
                 },
-                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
+                proxy_handler,
             ],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "username": username, "upstream": upstream, "server": server_name}}
+        return {"result": {"added": True, "host": host, "username": username, "upstream": upstream or "(none)", "server": server_name}}
     except Exception as e:
         return _err(e, "add_basicauth_route")
 
@@ -2588,53 +2583,6 @@ async def add_active_health_check_route(
         return {"result": {"server": server_name, "host": host, "upstream": upstream, "health_path": health_path, "interval": interval, "route_index": len(routes) - 1}}
     except Exception as e:
         return _err(e, "add_active_health_check_route")
-
-
-@mcp.tool()
-async def add_basic_auth_route(
-    host: str,
-    username: str,
-    hashed_password: str,
-    upstream: str = "",
-    server_name: str = "",
-) -> dict:
-    """Add a route with HTTP Basic Authentication. Requests must supply valid credentials before being proxied. hashed_password: bcrypt hash of the password — generate with: htpasswd -nbB <user> <pass> | cut -d: -f2. upstream: dial address to proxy authenticated requests to (e.g. 'localhost:8080'); if empty, returns 200 OK. WARNING: Basic auth sends credentials on every request — only use over HTTPS."""
-    if not host or not host.strip():
-        return {"error": "host must not be empty", "tool": "add_basic_auth_route"}
-    if not username or not username.strip():
-        return {"error": "username must not be empty", "tool": "add_basic_auth_route"}
-    if not hashed_password or not hashed_password.strip():
-        return {"error": "hashed_password must not be empty — provide a bcrypt hash", "tool": "add_basic_auth_route"}
-    try:
-        if not server_name:
-            resp = await _request("GET", "/config/apps/http/servers")
-            resp.raise_for_status()
-            server_name = next(iter(resp.json() or {}), "srv0")
-        auth_handler = {
-            "handler": "authentication",
-            "providers": {
-                "http_basic": {
-                    "accounts": [{"username": username.strip(), "password": hashed_password.strip()}]
-                }
-            },
-        }
-        proxy_handler = (
-            {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}
-            if upstream and upstream.strip()
-            else {"handler": "static_response", "status_code": 200, "body": "Authenticated"}
-        )
-        route = {
-            "match": [{"host": [host.strip()]}],
-            "handle": [auth_handler, proxy_handler],
-        }
-        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
-        routes.append(route)
-        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
-        put_resp.raise_for_status()
-        return {"result": {"server": server_name, "host": host, "username": username, "upstream": upstream or "(none)", "route_index": len(routes) - 1}}
-    except Exception as e:
-        return _err(e, "add_basic_auth_route")
 
 
 @mcp.tool()
