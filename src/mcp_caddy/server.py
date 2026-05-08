@@ -757,7 +757,7 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "username": username, "upstream": upstream, "server": server_name}}
+        return {"result": {"added": True, "host": host.strip(), "username": username.strip(), "upstream": upstream.strip(), "server": server_name}}
     except Exception as e:
         return _err(e, "add_basicauth_route")
 
