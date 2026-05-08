@@ -165,13 +165,13 @@ def _validate_upstream_dial(upstream: str) -> str | None:
     return None
 
 
-_GO_DURATION_RE = re.compile(r'^\d+(?:ns|us|ms|s|m|h)$')
+_GO_DURATION_RE = re.compile(r'^0$|^\d+(?:ns|us|ms|s|m|h)$')
 
 
 def _validate_go_duration(value: str, field: str) -> str | None:
-    """Return error string if value is not a valid Go duration (e.g. '30s', '1m', '500ms'), else None."""
+    """Return error string if value is not a valid Go duration (e.g. '30s', '1m', '500ms', '0'), else None."""
     if not _GO_DURATION_RE.match(value.strip()):
-        return f"{field} must be a valid Go duration (e.g. '30s', '1m', '500ms'), got '{value}'"
+        return f"{field} must be a valid Go duration (e.g. '30s', '1m', '500ms', or '0' to disable), got '{value}'"
     return None
 
 
@@ -1129,7 +1129,7 @@ async def add_compress_route(host: str, server_name: str = "", algorithms: str =
 
 @mcp.tool()
 async def add_request_header_route(host: str, header_name: str, header_value: str, server_name: str = "") -> dict:
-    """Add a route that injects a request header for all requests to a given host before forwarding to upstream. Useful for adding X-API-Key, Authorization, X-Custom-Header, or any other header the backend requires. host: domain to match. server_name: auto-detects first server if empty."""
+    """Add a route that injects a request header for all requests to a given host. The headers handler is middleware — it sets the header and passes the request to subsequent matching routes. Add a reverse proxy route separately (or use add_reverse_proxy_route which combines both). Useful for adding X-API-Key, Authorization, or any other header a backend requires. host: domain to match. server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_request_header_route"}
     host = host.strip()
@@ -1635,7 +1635,7 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
 
 @mcp.tool()
 async def set_server_timeouts(server_name: str, read_timeout: str = "", read_header_timeout: str = "", write_timeout: str = "", idle_timeout: str = "") -> dict:
-    """Configure request/response timeouts on a Caddy HTTP server block. All values are Go duration strings (e.g. '30s', '5m', '0' to disable). read_timeout: max time to read request headers and body. read_header_timeout: max time to read only request headers. write_timeout: max time to write response. idle_timeout: max time to wait for next request on a keep-alive connection (sets Caddy's keep_alive_interval). Use get_server to inspect current values. server_name: use list_servers to find names."""
+    """Configure request/response timeouts on a Caddy HTTP server block. All values are Go duration strings (e.g. '30s', '5m', '0' to disable). read_timeout: max time to read request headers and body. read_header_timeout: max time to read only request headers. write_timeout: max time to write response. idle_timeout: max time an idle keep-alive connection is kept open before closing. Use get_server to inspect current values. server_name: use list_servers to find names."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "set_server_timeouts"}
     server_name = server_name.strip()
@@ -2843,7 +2843,7 @@ async def add_cookie_match_route(
             resp.raise_for_status()
             server_name = next(iter(resp.json() or {}), "srv0")
         route = {
-            "match": [{"host": [host.strip()], "header_regexp": {"Cookie": {f"(?:^|;\\s*){re.escape(cookie_name.strip())}={re.escape(cookie_value.strip())}(?:;|$)": {}}}}],
+            "match": [{"host": [host.strip()], "header_regexp": {"Cookie": f"(?:^|;\\s*){re.escape(cookie_name.strip())}={re.escape(cookie_value.strip())}(?:;|$)"}}],
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
