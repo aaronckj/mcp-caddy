@@ -178,6 +178,8 @@ async def reload(source: str) -> dict:
 @mcp.tool()
 async def update_config_path(config_path: str, value: str) -> dict:
     """Update a specific Caddy config path with a new value via PATCH. config_path: e.g. '/apps/http/servers/srv0/listen'. value: JSON string of the new value."""
+    if not config_path.startswith("/"):
+        return {"error": "config_path must start with '/'", "tool": "update_config_path"}
     try:
         new_value = json.loads(value)
     except json.JSONDecodeError as e:
@@ -188,6 +190,19 @@ async def update_config_path(config_path: str, value: str) -> dict:
         return {"result": {"updated": True, "path": config_path}}
     except Exception as e:
         return {"error": str(e), "tool": "update_config_path", "detail": type(e).__name__}
+
+
+@mcp.tool()
+async def delete_config_path(config_path: str) -> dict:
+    """Delete a specific Caddy config node at the given path. config_path: e.g. '/apps/http/servers/srv0'. Changes take effect immediately."""
+    if not config_path.startswith("/"):
+        return {"error": "config_path must start with '/'", "tool": "delete_config_path"}
+    try:
+        resp = await _request("DELETE", f"/config{config_path}")
+        resp.raise_for_status()
+        return {"result": {"deleted": True, "path": config_path}}
+    except Exception as e:
+        return {"error": str(e), "tool": "delete_config_path", "detail": type(e).__name__}
 
 
 def main() -> None:
