@@ -1937,52 +1937,6 @@ async def add_response_delete_header_route(host: str, header_names: str, server_
         return _err(e, "add_response_delete_header_route")
 
 
-@mcp.tool()
-async def add_request_header_route(
-    host: str,
-    set_headers: str = "",
-    delete_headers: str = "",
-    server_name: str = "",
-) -> dict:
-    """Add a route that modifies request headers before proxying or handling. Useful for injecting auth tokens, custom identifiers, or stripping client headers. set_headers: headers to set as 'Name: Value' pairs separated by newlines or semicolons. delete_headers: comma-separated request header names to remove."""
-    if not host or not host.strip():
-        return {"error": "host must not be empty", "tool": "add_request_header_route"}
-    if not set_headers.strip() and not delete_headers.strip():
-        return {"error": "at least one of set_headers or delete_headers must be provided", "tool": "add_request_header_route"}
-    request_config: dict = {}
-    if set_headers.strip():
-        set_map: dict = {}
-        for raw in re.split(r"[;\n]+", set_headers):
-            raw = raw.strip()
-            if not raw:
-                continue
-            if ":" not in raw:
-                return {"error": f"Invalid header '{raw}': must be 'Name: Value'", "tool": "add_request_header_route"}
-            hname, _, hval = raw.partition(":")
-            set_map[hname.strip()] = [hval.strip()]
-        if set_map:
-            request_config["set"] = set_map
-    if delete_headers.strip():
-        to_delete = [h.strip() for h in delete_headers.split(",") if h.strip()]
-        if to_delete:
-            request_config["delete"] = to_delete
-    try:
-        if not server_name:
-            resp = await _request("GET", "/config/apps/http/servers")
-            resp.raise_for_status()
-            server_name = next(iter(resp.json() or {}), "srv0")
-        route = {
-            "match": [{"host": [host.strip()]}],
-            "handle": [{"handler": "headers", "request": request_config}],
-        }
-        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
-        routes.append(route)
-        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
-        put_resp.raise_for_status()
-        return {"result": {"server": server_name, "host": host, "set_headers": request_config.get("set", {}), "deleted_headers": request_config.get("delete", []), "route_index": len(routes) - 1}}
-    except Exception as e:
-        return _err(e, "add_request_header_route")
 
 
 @mcp.tool()
@@ -2022,85 +1976,6 @@ async def add_static_file_route(
         return _err(e, "add_static_file_route")
 
 
-@mcp.tool()
-async def get_route(index: int, server_name: str = "") -> dict:
-    """Get a specific route by its index in the routes array. Use list_routes to find the index. index: zero-based position in the routes list."""
-    try:
-        if not server_name:
-            resp = await _request("GET", "/config/apps/http/servers")
-            resp.raise_for_status()
-            server_name = next(iter(resp.json() or {}), "srv0")
-        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{index}")
-        resp.raise_for_status()
-        return {"result": {"server": server_name, "index": index, "route": resp.json()}}
-    except Exception as e:
-        return _err(e, "get_route")
-
-
-@mcp.tool()
-async def update_route(index: int, route_json: str, server_name: str = "") -> dict:
-    """Replace a route at a specific index with new configuration. index: zero-based position (use list_routes or get_route to inspect first). route_json: complete route object as JSON string. WARNING: replaces the route entirely; fetch with get_route first to avoid data loss."""
-    if not route_json or not route_json.strip():
-        return {"error": "route_json must not be empty", "tool": "update_route"}
-    try:
-        route = json.loads(route_json)
-    except json.JSONDecodeError as e:
-        return {"error": f"Invalid JSON: {e}", "tool": "update_route"}
-    try:
-        if not server_name:
-            resp = await _request("GET", "/config/apps/http/servers")
-            resp.raise_for_status()
-            server_name = next(iter(resp.json() or {}), "srv0")
-        resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes/{index}", json=route)
-        resp.raise_for_status()
-        return {"result": {"server": server_name, "index": index, "updated": True}}
-    except Exception as e:
-        return _err(e, "update_route")
-
-
-@mcp.tool()
-async def add_websocket_route(
-    host: str,
-    upstream: str,
-    path: str = "",
-    server_name: str = "",
-) -> dict:
-    """Add a WebSocket-aware reverse proxy route. Caddy proxies WebSocket upgrades automatically; this route uses flush_interval=-1 (stream immediately) and preserves Upgrade/Connection headers. host: virtual host to match. upstream: backend address (e.g. 'localhost:8080'). path: optional path prefix to restrict matching (e.g. '/ws')."""
-    if not host or not host.strip():
-        return {"error": "host must not be empty", "tool": "add_websocket_route"}
-    if not upstream or not upstream.strip():
-        return {"error": "upstream must not be empty", "tool": "add_websocket_route"}
-    try:
-        if not server_name:
-            resp = await _request("GET", "/config/apps/http/servers")
-            resp.raise_for_status()
-            server_name = next(iter(resp.json() or {}), "srv0")
-        match: dict = {"host": [host.strip()]}
-        if path.strip():
-            match["path"] = [path.strip().rstrip("/") + "/*", path.strip()]
-        route = {
-            "match": [match],
-            "handle": [{
-                "handler": "reverse_proxy",
-                "flush_interval": -1,
-                "upstreams": [{"dial": upstream.strip()}],
-                "headers": {
-                    "request": {
-                        "set": {
-                            "X-Forwarded-For": ["{http.request.remote.host}"],
-                        }
-                    }
-                },
-            }],
-        }
-        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
-        routes.append(route)
-        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
-        put_resp.raise_for_status()
-        return {"result": {"server": server_name, "host": host, "upstream": upstream, "flush_interval": -1, "route_index": len(routes) - 1}}
-    except Exception as e:
-        return _err(e, "add_websocket_route")
 
 
 def main() -> None:
