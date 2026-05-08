@@ -307,6 +307,39 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
 
 
 @mcp.tool()
+async def add_header_route(host: str, header_name: str, header_value: str, server_name: str = "") -> dict:
+    """Add a route that injects a response header for all requests to a given host. Useful for HSTS, CORS, X-Frame-Options, X-Content-Type-Options, etc. host: domain to match. server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_header_route"}
+    if not header_name or not header_name.strip():
+        return {"error": "header_name must not be empty", "tool": "add_header_route"}
+    if not header_value:
+        return {"error": "header_value must not be empty", "tool": "add_header_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers found. Use create_server first.", "tool": "add_header_route"}
+            server_name = next(iter(servers))
+
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{
+                "handler": "headers",
+                "response": {"set": {header_name.strip(): [header_value]}},
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host.strip(), "header": header_name.strip(), "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_header_route")
+
+
+@mcp.tool()
 async def delete_route(server_name: str, route_index: int) -> dict:
     """Delete a route by index from an HTTP server's route list. Use list_routes to find the index. Changes take effect immediately."""
     if not server_name or not server_name.strip():
@@ -388,10 +421,15 @@ async def adapt_config(caddyfile: str) -> dict:
 
 
 @mcp.tool()
-async def reload(source: str) -> dict:
-    """Reload Caddy config. source: raw JSON string (starts with '{') or path to a JSON config file."""
+async def reload(source: str = "") -> dict:
+    """Reload Caddy config. source: raw JSON string (starts with '{'), path to a JSON config file, or empty to reload the current running configuration in-place (useful for applying Caddy version upgrades or resetting to the live state)."""
     try:
-        if source.lstrip().startswith("{"):
+        if not source or not source.strip():
+            # Fetch and re-POST current running config
+            cur = await _request("GET", "/config/")
+            cur.raise_for_status()
+            config_data = cur.json()
+        elif source.lstrip().startswith("{"):
             config_data = json.loads(source)
         else:
             if not os.path.exists(source):
