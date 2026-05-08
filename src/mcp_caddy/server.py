@@ -2637,6 +2637,52 @@ async def add_basic_auth_route(
         return _err(e, "add_basic_auth_route")
 
 
+@mcp.tool()
+async def add_ip_denylist_route(
+    host: str,
+    blocked_cidrs: str,
+    upstream: str = "",
+    server_name: str = "",
+) -> dict:
+    """Add a route that blocks specific IP addresses/CIDRs with 403, while allowing all other traffic. Inverse of add_ip_filter_route (which is an allowlist). host: domain to match. blocked_cidrs: comma-separated IPs or CIDRs to deny (e.g. '1.2.3.4,10.0.0.0/8'). upstream: if provided, proxy non-blocked traffic here; otherwise, non-blocked traffic passes through Caddy normally."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_ip_denylist_route"}
+    if not blocked_cidrs or not blocked_cidrs.strip():
+        return {"error": "blocked_cidrs must not be empty", "tool": "add_ip_denylist_route"}
+    cidr_list = [c.strip() for c in blocked_cidrs.split(",") if c.strip()]
+    if not cidr_list:
+        return {"error": "blocked_cidrs must contain at least one IP or CIDR", "tool": "add_ip_denylist_route"}
+    try:
+        for cidr in cidr_list:
+            ipaddress.ip_network(cidr, strict=False)
+    except ValueError as e:
+        return {"error": f"Invalid IP/CIDR: {e}", "tool": "add_ip_denylist_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        deny_route = {
+            "match": [{"host": [host.strip()], "remote_ip": {"ranges": cidr_list}}],
+            "handle": [{"handler": "static_response", "status_code": 403, "body": "Forbidden"}],
+        }
+        new_routes = [deny_route]
+        if upstream and upstream.strip():
+            allow_route = {
+                "match": [{"host": [host.strip()]}],
+                "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+            }
+            new_routes.append(allow_route)
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        existing = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        existing.extend(new_routes)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=existing)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "blocked_cidrs": cidr_list, "upstream": upstream or "(none)", "routes_added": len(new_routes)}}
+    except Exception as e:
+        return _err(e, "add_ip_denylist_route")
+
+
 def main() -> None:
     mcp.run()
 
