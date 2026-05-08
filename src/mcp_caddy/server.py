@@ -193,11 +193,9 @@ def _extract_upstreams(handles: list) -> list[str]:
 async def list_routes() -> dict:
     """List all configured routes (virtual hosts) with hosts, handler, upstreams, listen addresses, and route index."""
     try:
-        resp = await _request("GET", "/config/")
+        resp = await _request("GET", "/config/apps/http/servers")
         resp.raise_for_status()
-        config = resp.json()
-
-        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        servers = resp.json() or {}
         routes_out = []
 
         for server_name, server in servers.items():
@@ -804,10 +802,9 @@ async def delete_https_redirect(host: str, http_server_name: str = "") -> dict:
         return {"error": "host must not be empty", "tool": "delete_https_redirect"}
     host = host.strip()
     try:
-        resp = await _request("GET", "/config/")
+        resp = await _request("GET", "/config/apps/http/servers")
         resp.raise_for_status()
-        config = resp.json() or {}
-        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        servers = resp.json() or {}
         if http_server_name:
             target_server = http_server_name.strip()
         else:
@@ -1273,10 +1270,9 @@ async def delete_route_by_host(host: str, server_name: str = "") -> dict:
         return {"error": "host must not be empty", "tool": "delete_route_by_host"}
     host = host.strip()
     try:
-        resp = await _request("GET", "/config/")
+        resp = await _request("GET", "/config/apps/http/servers")
         resp.raise_for_status()
-        config = resp.json() or {}
-        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        servers = resp.json() or {}
         if not servers:
             return {"error": "No HTTP servers configured in Caddy", "tool": "delete_route_by_host"}
         if server_name:
@@ -1370,10 +1366,9 @@ async def get_routes_by_host(host: str, server_name: str = "") -> dict:
         return {"error": "host must not be empty", "tool": "get_routes_by_host"}
     host = host.strip()
     try:
-        resp = await _request("GET", "/config/")
+        resp = await _request("GET", "/config/apps/http/servers")
         resp.raise_for_status()
-        config = resp.json() or {}
-        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        servers = resp.json() or {}
         if not servers:
             return {"error": "No HTTP servers configured in Caddy", "tool": "get_routes_by_host"}
         if server_name:
@@ -1798,10 +1793,9 @@ async def add_global_headers(headers: str, server_name: str = "") -> dict:
 async def delete_global_headers(server_name: str = "") -> dict:
     """Delete all global (no host matcher) header-only routes added by add_global_headers. These routes cannot be removed by delete_route_by_host because they have no match block. Removes every route in the server that has no match key and uses only a 'headers' handler. Returns the count of deleted routes. server_name: auto-detects first server if empty."""
     try:
-        resp = await _request("GET", "/config/")
+        resp = await _request("GET", "/config/apps/http/servers")
         resp.raise_for_status()
-        config = resp.json() or {}
-        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        servers = resp.json() or {}
         if not servers:
             return {"error": "No HTTP servers configured in Caddy", "tool": "delete_global_headers"}
         if server_name:
@@ -1872,13 +1866,9 @@ async def add_trusted_proxies(ranges: str = "private_ranges", server_name: str =
     ranges = (ranges or "private_ranges").strip()
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_trusted_proxies"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         server_name = server_name.strip()
         if ranges == "private_ranges":
             trusted: dict = {"source": "private_ranges"}
@@ -1909,13 +1899,9 @@ async def delete_trusted_proxies(server_name: str = "") -> dict:
     """Remove trusted proxy IP range configuration from a Caddy HTTP server. After removal, Caddy will no longer trust X-Forwarded-For headers from upstream proxies. server_name: auto-detects first server if empty."""
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "delete_trusted_proxies"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         server_name = server_name.strip()
         del_resp = await _request("DELETE", f"/config/apps/http/servers/{server_name}/trusted_proxies")
         if del_resp.status_code not in (200, 204, 404):
@@ -1931,10 +1917,9 @@ async def delete_trusted_proxies(server_name: str = "") -> dict:
 async def list_virtual_hosts() -> dict:
     """List all virtual hosts (domain names) configured across all Caddy HTTP servers. Scans every route in every server block and extracts unique hostname values from host matchers. Useful for a quick overview of what domains Caddy is serving and which server block each belongs to."""
     try:
-        resp = await _request("GET", "/config/")
+        resp = await _request("GET", "/config/apps/http/servers")
         resp.raise_for_status()
-        config = resp.json() or {}
-        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        servers = resp.json() or {}
         hosts: dict[str, list[str]] = {}
         for server_name, server_cfg in servers.items():
             server_hosts: list[str] = []
