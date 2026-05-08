@@ -760,7 +760,7 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
             return {"error": f"Route {route_index} has no reverse_proxy handler; use update_route for other handler types", "tool": "update_upstream"}
 
         patch_resp = await _request(
-            "PATCH",
+            "PUT",
             f"/config/apps/http/servers/{server_name}/routes/{route_index}",
             json=route,
         )
