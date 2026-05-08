@@ -268,7 +268,10 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "health_path": health_path.strip() or None, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_reverse_proxy_route")
+        err = _err(e, "add_reverse_proxy_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -402,7 +405,9 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "header": header_name, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_header_route")
+        err = _err(e, "add_header_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
@@ -948,7 +953,11 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "username": username, "upstream": upstream or "(none)", "server": server_name}}
     except Exception as e:
-        return _err(e, "add_basicauth_route")
+        err = _err(e, "add_basicauth_route")
+        err["host"] = host
+        if upstream:
+            err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -1046,7 +1055,9 @@ async def add_compress_route(host: str, server_name: str = "", algorithms: str =
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "algorithms": algo_list, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_compress_route")
+        err = _err(e, "add_compress_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
