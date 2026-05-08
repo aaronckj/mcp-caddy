@@ -265,7 +265,11 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
             "handle": [handler],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -299,7 +303,11 @@ async def add_path_route(path: str, upstream: str, server_name: str = "") -> dic
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -331,7 +339,11 @@ async def add_static_file_server(path: str, root: str, server_name: str = "") ->
             "handle": [{"handler": "file_server", "root": root}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -369,7 +381,11 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -407,7 +423,11 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -607,6 +627,10 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
         pol_resp = await _request("GET", "/config/apps/tls/automation/policies")
         pol_resp.raise_for_status()
         policies = pol_resp.json() or []
+        existing_subjects = {s for p in policies for s in p.get("subjects", [])}
+        overlap = [s for s in subject_list if s in existing_subjects]
+        if overlap:
+            return {"error": f"TLS policy already exists for: {overlap}. Use delete_tls_policy first.", "tool": "add_tls_policy", "subjects": overlap}
         policies.append(policy)
 
         # PATCH /config/apps/tls/automation — works if TLS app exists.
@@ -775,7 +799,11 @@ async def add_https_redirect(host: str, http_server_name: str = "") -> dict:
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{target_server}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{target_server}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1003,7 +1031,11 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
             ],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1072,7 +1104,11 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
             ],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1105,7 +1141,11 @@ async def add_compress_route(host: str, server_name: str = "", algorithms: str =
             "handle": [{"handler": "encode", "encodings": encodings, "prefer": algo_list}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1141,7 +1181,11 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1235,7 +1279,11 @@ async def add_cors_route(
             }
 
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1337,7 +1385,11 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
             "handle": [{"handler": "static_response", "status_code": 403}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         routes.append(deny_route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
@@ -1432,7 +1484,11 @@ async def add_maintenance_route(host: str, message: str = "Service temporarily u
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1476,7 +1532,11 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1547,7 +1607,11 @@ async def add_websocket_route(host: str, upstream: str, server_name: str = "", p
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1605,7 +1669,11 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
             "handle": handle,
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1677,7 +1745,11 @@ async def add_try_files_route(host: str, root: str, fallback: str = "/index.html
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1741,7 +1813,11 @@ async def add_stub_response_route(host: str, body: str = "", status_code: int = 
             handler["headers"] = {"Content-Type": [content_type.strip()]}
         route = {"match": [match_rule], "handle": [handler]}
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1777,7 +1853,11 @@ async def add_global_headers(headers: str, server_name: str = "") -> dict:
         server_name = server_name.strip()
         route = {"handle": [{"handler": "headers", "response": {"set": parsed}}]}
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -1964,7 +2044,11 @@ async def add_redirect_route(
             "handle": [{"handler": "static_response", "status_code": status_code, "headers": {"Location": [redirect_to]}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2040,7 +2124,11 @@ async def add_forward_auth_route(
             ]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2185,7 +2273,11 @@ async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_p
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2214,7 +2306,11 @@ async def add_response_delete_header_route(host: str, header_names: str, server_
             "handle": [{"handler": "headers", "response": {"delete": headers_to_delete}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2253,7 +2349,11 @@ async def add_static_file_route(
             "handle": [handler],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2298,7 +2398,11 @@ async def add_response_set_header_route(
             "handle": [{"handler": "headers", "response": {"set": set_map}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2361,7 +2465,11 @@ async def add_sse_route(
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2409,7 +2517,11 @@ async def add_security_headers_route(
             "handle": [{"handler": "headers", "response": {"set": set_map}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2450,7 +2562,11 @@ async def add_cache_headers_route(
             "handle": [{"handler": "headers", "response": {"set": {"Cache-Control": [cc_value]}}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2509,7 +2625,11 @@ async def add_retry_route(
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2555,7 +2675,11 @@ async def add_strip_prefix_route(
             ],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2598,7 +2722,11 @@ async def add_header_match_route(
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.insert(0, route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2652,7 +2780,11 @@ async def add_method_match_route(
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.insert(0, route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2695,7 +2827,11 @@ async def add_query_match_route(
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.insert(0, route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2728,7 +2864,11 @@ async def add_request_body_limit(
             "handle": [{"handler": "request_body", "max_size": max_size_bytes}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.insert(0, route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2818,7 +2958,11 @@ async def add_cookie_match_route(
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.insert(0, route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2850,7 +2994,11 @@ async def add_not_found_route(
             "handle": [{"handler": "static_response", "status_code": 404, "headers": {"Content-Type": [content_type]}, "body": body}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2912,7 +3060,11 @@ async def add_circuit_breaker_route(
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -2970,7 +3122,11 @@ async def add_active_health_check_route(
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            routes = []
+        else:
+            get_resp.raise_for_status()
+            routes = get_resp.json() or []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
@@ -3023,7 +3179,11 @@ async def add_ip_denylist_route(
             }
             new_routes.append(allow_route)
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        existing = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        if get_resp.status_code == 404:
+            existing = []
+        else:
+            get_resp.raise_for_status()
+            existing = get_resp.json() or []
         existing.extend(new_routes)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=existing)
         put_resp.raise_for_status()
