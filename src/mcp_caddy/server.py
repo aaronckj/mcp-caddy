@@ -1353,6 +1353,92 @@ async def list_modules() -> dict:
         return _err(e, "list_modules")
 
 
+@mcp.tool()
+async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:9000", root: str = "", server_name: str = "") -> dict:
+    """Add a PHP FastCGI route for serving PHP applications via PHP-FPM. host: domain to match. php_fpm_address: PHP-FPM socket or address — TCP (e.g. '127.0.0.1:9000') or Unix socket (e.g. 'unix//run/php/php8.2-fpm.sock'). root: filesystem root for PHP files (e.g. '/var/www/html'). server_name: auto-detects first server if empty. Adds a subroute that strips path info and proxies *.php requests via FastCGI, then falls back to static file_server for non-PHP assets."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_php_fastcgi_route"}
+    host = host.strip()
+    if not php_fpm_address or not php_fpm_address.strip():
+        return {"error": "php_fpm_address must not be empty", "tool": "add_php_fastcgi_route"}
+    php_fpm_address = php_fpm_address.strip()
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_php_fastcgi_route"}
+            server_name = next(iter(servers))
+        handle: list = []
+        if root and root.strip():
+            handle.append({"handler": "vars", "root": root.strip()})
+        handle.extend([
+            {
+                "handler": "rewrite",
+                "uri": "{http.request.uri.path}{http.request.uri.query_string}",
+            },
+            {
+                "handler": "subroute",
+                "routes": [
+                    {
+                        "match": [{"path": ["*.php"]}],
+                        "handle": [{
+                            "handler": "reverse_proxy",
+                            "transport": {
+                                "protocol": "fastcgi",
+                                "root": root.strip() if root and root.strip() else "",
+                            },
+                            "upstreams": [{"dial": php_fpm_address}],
+                        }],
+                    },
+                    {
+                        "handle": [{"handler": "file_server"}],
+                    },
+                ],
+            },
+        ])
+        route = {
+            "match": [{"host": [host]}],
+            "handle": handle,
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "php_fpm": php_fpm_address, "root": root.strip() or None, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_php_fastcgi_route")
+
+
+@mcp.tool()
+async def set_server_timeouts(server_name: str, read_timeout: str = "", read_header_timeout: str = "", write_timeout: str = "", idle_timeout: str = "") -> dict:
+    """Configure request/response timeouts on a Caddy HTTP server block. All values are Go duration strings (e.g. '30s', '5m', '0' to disable). read_timeout: max time to read request headers and body. read_header_timeout: max time to read only request headers. write_timeout: max time to write response. idle_timeout: max time to wait for next request on a keep-alive connection (sets Caddy's keep_alive_interval). Use get_server to inspect current values. server_name: use list_servers to find names."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "set_server_timeouts"}
+    server_name = server_name.strip()
+    if not any([read_timeout, read_header_timeout, write_timeout, idle_timeout]):
+        return {"error": "At least one timeout parameter must be specified", "tool": "set_server_timeouts"}
+    timeouts: dict = {}
+    if read_timeout and read_timeout.strip():
+        timeouts["read_timeout"] = read_timeout.strip()
+    if read_header_timeout and read_header_timeout.strip():
+        timeouts["read_header_timeout"] = read_header_timeout.strip()
+    if write_timeout and write_timeout.strip():
+        timeouts["write_timeout"] = write_timeout.strip()
+    if idle_timeout and idle_timeout.strip():
+        timeouts["idle_timeout"] = idle_timeout.strip()
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}")
+        resp.raise_for_status()
+        server_cfg = resp.json() or {}
+        server_cfg.update(timeouts)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}", json=server_cfg)
+        put_resp.raise_for_status()
+        return {"result": {"updated": True, "server": server_name, "timeouts": timeouts}}
+    except Exception as e:
+        return _err(e, "set_server_timeouts")
+
+
 def main() -> None:
     mcp.run()
 
