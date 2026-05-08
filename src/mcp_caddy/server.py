@@ -94,7 +94,7 @@ async def list_routes() -> dict:
 
         for server_name, server in servers.items():
             listen = server.get("listen", [])
-            for route in server.get("routes", []):
+            for idx, route in enumerate(server.get("routes", [])):
                 hosts = []
                 for match in route.get("match", []):
                     hosts.extend(match.get("host", []))
@@ -105,6 +105,7 @@ async def list_routes() -> dict:
 
                 routes_out.append({
                     "server": server_name,
+                    "index": idx,
                     "listen": listen,
                     "hosts": hosts,
                     "handler": handler_type,
@@ -145,6 +146,49 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
         return {"result": {"added": True, "host": host, "upstream": upstream, "server": server_name}}
     except Exception as e:
         return _err(e, "add_reverse_proxy_route")
+
+
+@mcp.tool()
+async def add_static_file_server(path: str, root: str, server_name: str = "") -> dict:
+    """Add a static file server route to Caddy. path: URL path to match (e.g., '/files/*'). root: filesystem directory to serve. server_name: auto-detects first server if empty."""
+    if not path or not path.strip():
+        return {"error": "path must not be empty", "tool": "add_static_file_server"}
+    if not root or not root.strip():
+        return {"error": "root must not be empty", "tool": "add_static_file_server"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_static_file_server"}
+            server_name = next(iter(servers))
+
+        route = {
+            "match": [{"path": [path]}],
+            "handle": [{"handler": "file_server", "root": root}],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "server": server_name, "path": path, "root": root}}
+    except Exception as e:
+        return _err(e, "add_static_file_server")
+
+
+@mcp.tool()
+async def delete_route(server_name: str, route_index: int) -> dict:
+    """Delete a route by index from an HTTP server's route list. Use list_routes to find the index. Changes take effect immediately."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "delete_route"}
+    if route_index < 0:
+        return {"error": "route_index must be >= 0", "tool": "delete_route"}
+    try:
+        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
+        resp.raise_for_status()
+        return {"result": {"server_name": server_name, "route_index": route_index, "deleted": True}}
+    except Exception as e:
+        return _err(e, "delete_route")
 
 
 @mcp.tool()
