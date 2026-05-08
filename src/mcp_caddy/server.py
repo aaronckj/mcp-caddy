@@ -332,7 +332,7 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
             "match": [{"host": [host.strip()]}],
             "handle": [{
                 "handler": "headers",
-                "response": {"set": {header_name.strip(): [header_value]}},
+                "response": {"set": {header_name.strip(): [header_value.strip()]}},
             }],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
