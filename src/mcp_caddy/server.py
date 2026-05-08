@@ -158,6 +158,16 @@ def _validate_upstream_dial(upstream: str) -> str | None:
     return None
 
 
+_GO_DURATION_RE = re.compile(r'^\d+(?:ns|us|ms|s|m|h)$')
+
+
+def _validate_go_duration(value: str, field: str) -> str | None:
+    """Return error string if value is not a valid Go duration (e.g. '30s', '1m', '500ms'), else None."""
+    if not _GO_DURATION_RE.match(value.strip()):
+        return f"{field} must be a valid Go duration (e.g. '30s', '1m', '500ms'), got '{value}'"
+    return None
+
+
 def _extract_upstreams(handles: list) -> list[str]:
     """Extract upstream dial addresses, recursing into subroute handlers."""
     upstreams = []
@@ -1467,6 +1477,8 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
     if not php_fpm_address or not php_fpm_address.strip():
         return {"error": "php_fpm_address must not be empty", "tool": "add_php_fastcgi_route"}
     php_fpm_address = php_fpm_address.strip()
+    if err := _validate_upstream_dial(php_fpm_address):
+        return {"error": err, "tool": "add_php_fastcgi_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -2231,6 +2243,8 @@ async def add_cache_headers_route(
         return {"error": "host must not be empty", "tool": "add_cache_headers_route"}
     if not path_pattern or not path_pattern.strip():
         return {"error": "path_pattern must not be empty", "tool": "add_cache_headers_route"}
+    if max_age < 0:
+        return {"error": "max_age must be >= 0", "tool": "add_cache_headers_route"}
     cc_value = f"public, max-age={max_age}"
     if immutable:
         cc_value += ", immutable"
@@ -2638,6 +2652,10 @@ async def add_circuit_breaker_route(
         return {"error": err, "tool": "add_circuit_breaker_route"}
     if max_fails < 1:
         return {"error": "max_fails must be at least 1", "tool": "add_circuit_breaker_route"}
+    if err := _validate_go_duration(fail_duration, "fail_duration"):
+        return {"error": err, "tool": "add_circuit_breaker_route"}
+    if err := _validate_go_duration(unhealthy_latency, "unhealthy_latency"):
+        return {"error": err, "tool": "add_circuit_breaker_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2695,6 +2713,10 @@ async def add_active_health_check_route(
         return {"error": err, "tool": "add_active_health_check_route"}
     if expect_status < 100 or expect_status > 599:
         return {"error": "expect_status must be a valid HTTP status code (100-599)", "tool": "add_active_health_check_route"}
+    if err := _validate_go_duration(interval, "interval"):
+        return {"error": err, "tool": "add_active_health_check_route"}
+    if err := _validate_go_duration(timeout, "timeout"):
+        return {"error": err, "tool": "add_active_health_check_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
