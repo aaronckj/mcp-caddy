@@ -760,10 +760,9 @@ async def add_https_redirect(host: str, http_server_name: str = "") -> dict:
         return {"error": "host must not be empty", "tool": "add_https_redirect"}
     host = host.strip()
     try:
-        resp = await _request("GET", "/config/")
+        resp = await _request("GET", "/config/apps/http/servers")
         resp.raise_for_status()
-        config = resp.json() or {}
-        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        servers = resp.json() or {}
 
         if http_server_name:
             if http_server_name.strip() not in servers:
@@ -788,9 +787,12 @@ async def add_https_redirect(host: str, http_server_name: str = "") -> dict:
                 "headers": {"Location": ["https://{http.request.host}{http.request.uri}"]},
             }],
         }
-        add_resp = await _request("POST", f"/config/apps/http/servers/{target_server}/routes", json=route)
-        add_resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "server": target_server}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{target_server}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{target_server}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "server": target_server, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_https_redirect"); err["host"] = host; return err
 
@@ -1575,13 +1577,9 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
         return {"error": err, "tool": "add_php_fastcgi_route"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_php_fastcgi_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         handle: list = []
         if root and root.strip():
             handle.append({"handler": "vars", "root": root.strip()})
@@ -1614,9 +1612,12 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
             "match": [{"host": [host]}],
             "handle": handle,
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "php_fpm": php_fpm_address, "root": root.strip() or None, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "php_fpm": php_fpm_address, "root": root.strip() or None, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_php_fastcgi_route"); err["host"] = host; return err
 
@@ -1664,13 +1665,9 @@ async def add_try_files_route(host: str, root: str, fallback: str = "/index.html
         fallback = "/" + fallback
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_try_files_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         server_name = server_name.strip()
         route = {
             "match": [{"host": [host]}],
@@ -1687,9 +1684,12 @@ async def add_try_files_route(host: str, root: str, fallback: str = "/index.html
                 ],
             }],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "root": root, "fallback": fallback, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "root": root, "fallback": fallback, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_try_files_route"); err["host"] = host; err["root"] = root; return err
 
@@ -1732,13 +1732,9 @@ async def add_stub_response_route(host: str, body: str = "", status_code: int = 
         return {"error": f"status_code must be 100-599, got {status_code}", "tool": "add_stub_response_route"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_stub_response_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         server_name = server_name.strip()
         match_rule: dict = {"host": [host]}
         if path_prefix and path_prefix.strip():
@@ -1752,9 +1748,12 @@ async def add_stub_response_route(host: str, body: str = "", status_code: int = 
         if content_type and content_type.strip():
             handler["headers"] = {"Content-Type": [content_type.strip()]}
         route = {"match": [match_rule], "handle": [handler]}
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "status_code": status_code, "path_prefix": path_prefix.strip() or None, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "status_code": status_code, "path_prefix": path_prefix.strip() or None, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_stub_response_route")
         err["host"] = host
@@ -1780,18 +1779,17 @@ async def add_global_headers(headers: str, server_name: str = "") -> dict:
         return {"error": "No valid headers parsed", "tool": "add_global_headers"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_global_headers"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         server_name = server_name.strip()
         route = {"handle": [{"handler": "headers", "response": {"set": parsed}}]}
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "headers": parsed, "server": server_name, "scope": "global"}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"headers": parsed, "server": server_name, "scope": "global", "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_global_headers"); err["server_name"] = server_name; return err
 
