@@ -60,6 +60,7 @@ async def get_config() -> dict:
 @mcp.tool()
 async def get_config_path(config_path: str) -> dict:
     """Get a specific Caddy config node by path. config_path: e.g. '/apps/http/servers' or '/apps/tls'."""
+    config_path = config_path.strip()
     if not config_path.startswith("/"):
         return {"error": "config_path must start with '/'", "tool": "get_config_path"}
     try:
@@ -461,6 +462,7 @@ async def reload(source: str = "") -> dict:
 @mcp.tool()
 async def update_config_path(config_path: str, value: str) -> dict:
     """Update a specific Caddy config path with a new value via PATCH. config_path: e.g. '/apps/http/servers/srv0/listen'. value: JSON string of the new value."""
+    config_path = config_path.strip()
     if not config_path.startswith("/"):
         return {"error": "config_path must start with '/'", "tool": "update_config_path"}
     try:
@@ -478,6 +480,7 @@ async def update_config_path(config_path: str, value: str) -> dict:
 @mcp.tool()
 async def delete_config_path(config_path: str) -> dict:
     """Delete a specific Caddy config node at the given path. config_path: e.g. '/apps/http/servers/srv0'. Changes take effect immediately."""
+    config_path = config_path.strip()
     if not config_path.startswith("/"):
         return {"error": "config_path must start with '/'", "tool": "delete_config_path"}
     try:
