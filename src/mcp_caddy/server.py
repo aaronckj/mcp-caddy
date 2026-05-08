@@ -622,7 +622,7 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
                 raise
         return {"result": {"added": True, "subjects": subject_list, "issuer_module": issuer["module"]}}
     except Exception as e:
-        return _err(e, "add_tls_policy")
+        err = _err(e, "add_tls_policy"); err["subjects"] = subject_list; return err
 
 
 @mcp.tool()
@@ -673,9 +673,9 @@ async def update_tls_policy(policy_index: int, subjects: str = "", ca_url: str =
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             return {"error": f"TLS policy at index {policy_index} not found", "tool": "update_tls_policy"}
-        return _err(e, "update_tls_policy")
+        err = _err(e, "update_tls_policy"); err["policy_index"] = policy_index; return err
     except Exception as e:
-        return _err(e, "update_tls_policy")
+        err = _err(e, "update_tls_policy"); err["policy_index"] = policy_index; return err
 
 
 @mcp.tool()
@@ -690,9 +690,9 @@ async def get_tls_policy(policy_index: int) -> dict:
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             return {"error": f"TLS policy at index {policy_index} not found", "tool": "get_tls_policy"}
-        return _err(e, "get_tls_policy")
+        err = _err(e, "get_tls_policy"); err["policy_index"] = policy_index; return err
     except Exception as e:
-        return _err(e, "get_tls_policy")
+        err = _err(e, "get_tls_policy"); err["policy_index"] = policy_index; return err
 
 
 @mcp.tool()
@@ -707,9 +707,9 @@ async def delete_tls_policy(policy_index: int) -> dict:
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             return {"error": f"TLS policy at index {policy_index} not found", "tool": "delete_tls_policy"}
-        return _err(e, "delete_tls_policy")
+        err = _err(e, "delete_tls_policy"); err["policy_index"] = policy_index; return err
     except Exception as e:
-        return _err(e, "delete_tls_policy")
+        err = _err(e, "delete_tls_policy"); err["policy_index"] = policy_index; return err
 
 
 @mcp.tool()
@@ -1696,7 +1696,7 @@ async def get_pki_ca_certificates(ca_name: str = "local") -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return _err(e, "get_pki_ca_certificates")
+        err = _err(e, "get_pki_ca_certificates"); err["ca_name"] = ca_name; return err
 
 
 @mcp.tool()
@@ -1710,7 +1710,7 @@ async def renew_pki_ca(ca_name: str = "local") -> dict:
         resp.raise_for_status()
         return {"result": {"ca_name": ca_name, "renewed": True}}
     except Exception as e:
-        return _err(e, "renew_pki_ca")
+        err = _err(e, "renew_pki_ca"); err["ca_name"] = ca_name; return err
 
 
 @mcp.tool()
