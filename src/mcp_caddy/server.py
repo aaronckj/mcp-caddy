@@ -1937,6 +1937,54 @@ async def add_response_delete_header_route(host: str, header_names: str, server_
         return _err(e, "add_response_delete_header_route")
 
 
+@mcp.tool()
+async def add_request_header_route(
+    host: str,
+    set_headers: str = "",
+    delete_headers: str = "",
+    server_name: str = "",
+) -> dict:
+    """Add a route that modifies request headers before proxying or handling. Useful for injecting auth tokens, custom identifiers, or stripping client headers. set_headers: headers to set as 'Name: Value' pairs separated by newlines or semicolons. delete_headers: comma-separated request header names to remove."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_request_header_route"}
+    if not set_headers.strip() and not delete_headers.strip():
+        return {"error": "at least one of set_headers or delete_headers must be provided", "tool": "add_request_header_route"}
+    request_config: dict = {}
+    if set_headers.strip():
+        set_map: dict = {}
+        for raw in re.split(r"[;\n]+", set_headers):
+            raw = raw.strip()
+            if not raw:
+                continue
+            if ":" not in raw:
+                return {"error": f"Invalid header '{raw}': must be 'Name: Value'", "tool": "add_request_header_route"}
+            hname, _, hval = raw.partition(":")
+            set_map[hname.strip()] = [hval.strip()]
+        if set_map:
+            request_config["set"] = set_map
+    if delete_headers.strip():
+        to_delete = [h.strip() for h in delete_headers.split(",") if h.strip()]
+        if to_delete:
+            request_config["delete"] = to_delete
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "headers", "request": request_config}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "set_headers": request_config.get("set", {}), "deleted_headers": request_config.get("delete", []), "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_request_header_route")
+
+
 def main() -> None:
     mcp.run()
 
