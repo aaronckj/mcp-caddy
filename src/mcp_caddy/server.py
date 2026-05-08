@@ -21,6 +21,17 @@ async def _request(method: str, path: str, **kwargs) -> httpx.Response:
         return await client.request(method, f"{host}{path}", **kwargs)
 
 
+def _err(e: Exception, tool: str) -> dict:
+    out: dict = {"error": str(e), "tool": tool, "detail": type(e).__name__}
+    if isinstance(e, httpx.HTTPStatusError):
+        out["status"] = e.response.status_code
+        try:
+            out["body"] = e.response.json()
+        except Exception:
+            out["body"] = e.response.text[:500]
+    return out
+
+
 @mcp.tool()
 async def server_info() -> dict:
     """Get Caddy server version and list of loaded modules."""
@@ -29,7 +40,7 @@ async def server_info() -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return {"error": str(e), "tool": "server_info", "detail": type(e).__name__}
+        return _err(e, "server_info")
 
 
 @mcp.tool()
@@ -40,7 +51,7 @@ async def get_config() -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return {"error": str(e), "tool": "get_config", "detail": type(e).__name__}
+        return _err(e, "get_config")
 
 
 @mcp.tool()
@@ -53,7 +64,7 @@ async def get_config_path(config_path: str) -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return {"error": str(e), "tool": "get_config_path", "detail": type(e).__name__}
+        return _err(e, "get_config_path")
 
 
 def _extract_upstreams(handles: list) -> list[str]:
@@ -102,7 +113,38 @@ async def list_routes() -> dict:
 
         return {"result": routes_out}
     except Exception as e:
-        return {"error": str(e), "tool": "list_routes", "detail": type(e).__name__}
+        return _err(e, "list_routes")
+
+
+@mcp.tool()
+async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "") -> dict:
+    """Add a reverse proxy route to Caddy. host: domain (e.g. 'app.example.com'). upstream: backend dial address (e.g. 'localhost:3000'). server_name: Caddy server block (auto-detects first server if empty)."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_reverse_proxy_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_reverse_proxy_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {
+                    "error": "No HTTP servers found in Caddy config. Use reload to load an initial configuration first.",
+                    "tool": "add_reverse_proxy_route",
+                }
+            server_name = next(iter(servers))
+
+        route = {
+            "match": [{"host": [host]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "upstream": upstream, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_reverse_proxy_route")
 
 
 @mcp.tool()
@@ -113,7 +155,7 @@ async def list_upstreams() -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return {"error": str(e), "tool": "list_upstreams", "detail": type(e).__name__}
+        return _err(e, "list_upstreams")
 
 
 @mcp.tool()
@@ -149,7 +191,7 @@ async def get_certificates() -> dict:
 
         return {"result": certs}
     except Exception as e:
-        return {"error": str(e), "tool": "get_certificates", "detail": type(e).__name__}
+        return _err(e, "get_certificates")
 
 
 @mcp.tool()
@@ -168,7 +210,7 @@ async def adapt_config(caddyfile: str) -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return {"error": str(e), "tool": "adapt_config", "detail": type(e).__name__}
+        return _err(e, "adapt_config")
 
 
 @mcp.tool()
@@ -187,7 +229,7 @@ async def reload(source: str) -> dict:
         resp.raise_for_status()
         return {"result": {"reloaded": True}}
     except Exception as e:
-        return {"error": str(e), "tool": "reload", "detail": type(e).__name__}
+        return _err(e, "reload")
 
 
 @mcp.tool()
@@ -204,7 +246,7 @@ async def update_config_path(config_path: str, value: str) -> dict:
         resp.raise_for_status()
         return {"result": {"updated": True, "path": config_path}}
     except Exception as e:
-        return {"error": str(e), "tool": "update_config_path", "detail": type(e).__name__}
+        return _err(e, "update_config_path")
 
 
 @mcp.tool()
@@ -217,7 +259,7 @@ async def delete_config_path(config_path: str) -> dict:
         resp.raise_for_status()
         return {"result": {"deleted": True, "path": config_path}}
     except Exception as e:
-        return {"error": str(e), "tool": "delete_config_path", "detail": type(e).__name__}
+        return _err(e, "delete_config_path")
 
 
 def main() -> None:
