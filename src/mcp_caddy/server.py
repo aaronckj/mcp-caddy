@@ -207,7 +207,12 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
 
         match_rule: dict = {"host": [host.strip()]}
         if path_prefix:
-            match_rule["path"] = [path_prefix.strip() if path_prefix.strip().endswith("*") else path_prefix.strip()]
+            p = path_prefix.strip().rstrip("/")
+            # If no wildcard, match both the exact path and all children
+            if not p.endswith("*"):
+                match_rule["path"] = [p, p + "/*"]
+            else:
+                match_rule["path"] = [p]
         route = {
             "match": [match_rule],
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
@@ -819,6 +824,71 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
         return {"result": {"added": True, "host": host.strip(), "path_prefix": prefix, "upstream": upstream.strip(), "server": server_name}}
     except Exception as e:
         return _err(e, "add_rewrite_route")
+
+
+@mcp.tool()
+async def add_compress_route(host: str, server_name: str = "", algorithms: str = "zstd,gzip") -> dict:
+    """Add a compression (encode) route for a host to enable gzip/zstd response compression. Caddy automatically negotiates the best algorithm based on Accept-Encoding. algorithms: comma-separated list of encoders — 'zstd' (preferred), 'gzip', or both (default). server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_compress_route"}
+    algo_list = [a.strip().lower() for a in algorithms.split(",") if a.strip()]
+    valid_algos = {"gzip", "zstd"}
+    invalid = [a for a in algo_list if a not in valid_algos]
+    if invalid:
+        return {"error": f"Invalid algorithms: {invalid}. Use 'gzip' and/or 'zstd'", "tool": "add_compress_route"}
+    if not algo_list:
+        return {"error": "algorithms must not be empty", "tool": "add_compress_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_compress_route"}
+            server_name = next(iter(servers))
+        encodings = {a: {} for a in algo_list}
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "encode", "encodings": encodings, "prefer": algo_list}],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host.strip(), "algorithms": algo_list, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_compress_route")
+
+
+@mcp.tool()
+async def add_request_header_route(host: str, header_name: str, header_value: str, server_name: str = "") -> dict:
+    """Add a route that injects a request header for all requests to a given host before forwarding to upstream. Useful for adding X-API-Key, Authorization, X-Custom-Header, or any other header the backend requires. host: domain to match. server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_request_header_route"}
+    if not header_name or not header_name.strip():
+        return {"error": "header_name must not be empty", "tool": "add_request_header_route"}
+    if not header_value:
+        return {"error": "header_value must not be empty", "tool": "add_request_header_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers found. Use create_server first.", "tool": "add_request_header_route"}
+            server_name = next(iter(servers))
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{
+                "handler": "headers",
+                "request": {"set": {header_name.strip(): [header_value.strip()]}},
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host.strip(), "header": header_name.strip(), "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_request_header_route")
 
 
 def main() -> None:
