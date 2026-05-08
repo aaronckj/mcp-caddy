@@ -99,7 +99,7 @@ async def get_server(server_name: str) -> dict:
         return {"error": "server_name must not be empty", "tool": "get_server"}
     server_name = server_name.strip()
     try:
-        resp = await _request("GET", f"/config/apps/http/servers/{server_name.strip()}")
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}")
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
@@ -113,9 +113,9 @@ async def delete_server(server_name: str) -> dict:
         return {"error": "server_name must not be empty", "tool": "delete_server"}
     server_name = server_name.strip()
     try:
-        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name.strip()}")
+        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name}")
         resp.raise_for_status()
-        return {"result": {"deleted": True, "name": server_name.strip()}}
+        return {"result": {"deleted": True, "name": server_name}}
     except Exception as e:
         return _err(e, "delete_server")
 
