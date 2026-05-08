@@ -91,6 +91,32 @@ async def list_servers() -> dict:
         return _err(e, "list_servers")
 
 
+@mcp.tool()
+async def get_server(server_name: str) -> dict:
+    """Get full configuration of a Caddy HTTP server block including listen addresses, routes, and TLS settings."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "get_server"}
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name.strip()}")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "get_server")
+
+
+@mcp.tool()
+async def delete_server(server_name: str) -> dict:
+    """Delete a Caddy HTTP server block entirely, removing all its routes and configuration. This is irreversible without a config backup."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "delete_server"}
+    try:
+        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name.strip()}")
+        resp.raise_for_status()
+        return {"result": {"deleted": True, "name": server_name.strip()}}
+    except Exception as e:
+        return _err(e, "delete_server")
+
+
 def _extract_upstreams(handles: list) -> list[str]:
     """Extract upstream dial addresses, recursing into subroute handlers."""
     upstreams = []
