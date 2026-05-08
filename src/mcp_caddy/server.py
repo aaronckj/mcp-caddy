@@ -43,6 +43,19 @@ async def get_config() -> dict:
         return {"error": str(e), "tool": "get_config", "detail": type(e).__name__}
 
 
+@mcp.tool()
+async def get_config_path(config_path: str) -> dict:
+    """Get a specific Caddy config node by path. config_path: e.g. '/apps/http/servers' or '/apps/tls'."""
+    if not config_path.startswith("/"):
+        return {"error": "config_path must start with '/'", "tool": "get_config_path"}
+    try:
+        resp = await _request("GET", f"/config{config_path}")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return {"error": str(e), "tool": "get_config_path", "detail": type(e).__name__}
+
+
 def _extract_upstreams(handles: list) -> list[str]:
     """Extract upstream dial addresses, recursing into subroute handlers."""
     upstreams = []
@@ -59,7 +72,7 @@ def _extract_upstreams(handles: list) -> list[str]:
 
 @mcp.tool()
 async def list_routes() -> dict:
-    """List all configured routes (virtual hosts) parsed from Caddy's HTTP app config."""
+    """List all configured routes (virtual hosts) with hosts, handler, upstreams, and listen addresses."""
     try:
         resp = await _request("GET", "/config/")
         resp.raise_for_status()
@@ -69,6 +82,7 @@ async def list_routes() -> dict:
         routes_out = []
 
         for server_name, server in servers.items():
+            listen = server.get("listen", [])
             for route in server.get("routes", []):
                 hosts = []
                 for match in route.get("match", []):
@@ -80,6 +94,7 @@ async def list_routes() -> dict:
 
                 routes_out.append({
                     "server": server_name,
+                    "listen": listen,
                     "hosts": hosts,
                     "handler": handler_type,
                     "upstreams": upstreams,
