@@ -2074,6 +2074,81 @@ async def add_sse_route(
         return _err(e, "add_sse_route")
 
 
+@mcp.tool()
+async def add_security_headers_route(
+    host: str,
+    hsts_max_age: int = 31536000,
+    hsts_subdomains: bool = True,
+    x_frame_options: str = "SAMEORIGIN",
+    x_content_type_options: bool = True,
+    referrer_policy: str = "strict-origin-when-cross-origin",
+    server_name: str = "",
+) -> dict:
+    """Add a route that sets a bundle of standard security response headers for a host. Covers HSTS, clickjacking protection, MIME sniffing prevention, and referrer policy. hsts_max_age: HSTS max-age in seconds (default 1 year). x_frame_options: DENY, SAMEORIGIN, or empty to omit. referrer_policy: see MDN for valid values."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_security_headers_route"}
+    set_map: dict = {
+        "Strict-Transport-Security": [f"max-age={hsts_max_age}" + ("; includeSubDomains" if hsts_subdomains else "")],
+        "Referrer-Policy": [referrer_policy.strip()],
+    }
+    if x_frame_options.strip():
+        set_map["X-Frame-Options"] = [x_frame_options.strip()]
+    if x_content_type_options:
+        set_map["X-Content-Type-Options"] = ["nosniff"]
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "headers", "response": {"set": set_map}}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "headers_set": list(set_map.keys()), "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_security_headers_route")
+
+
+@mcp.tool()
+async def add_cache_headers_route(
+    host: str,
+    path_pattern: str,
+    max_age: int = 86400,
+    immutable: bool = False,
+    server_name: str = "",
+) -> dict:
+    """Add a route that sets Cache-Control response headers for static assets matching a path pattern. path_pattern: URL path glob (e.g. '/static/*', '*.css', '/assets/*'). max_age: seconds to cache (default 86400 = 1 day). immutable: add 'immutable' directive for versioned assets that never change."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_cache_headers_route"}
+    if not path_pattern or not path_pattern.strip():
+        return {"error": "path_pattern must not be empty", "tool": "add_cache_headers_route"}
+    cc_value = f"public, max-age={max_age}"
+    if immutable:
+        cc_value += ", immutable"
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()], "path": [path_pattern.strip()]}],
+            "handle": [{"handler": "headers", "response": {"set": {"Cache-Control": [cc_value]}}}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "path_pattern": path_pattern, "cache_control": cc_value, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_cache_headers_route")
+
+
 def main() -> None:
     mcp.run()
 
