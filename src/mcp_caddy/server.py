@@ -2019,6 +2019,61 @@ async def add_response_set_header_route(
         return _err(e, "add_response_set_header_route")
 
 
+@mcp.tool()
+async def set_acme_email(email: str) -> dict:
+    """Set the global ACME registration email for Let's Encrypt certificate issuance. This email receives expiry warnings from the CA. Applies immediately."""
+    if not email or not email.strip():
+        return {"error": "email must not be empty", "tool": "set_acme_email"}
+    email = email.strip()
+    if "@" not in email:
+        return {"error": "email must be a valid email address", "tool": "set_acme_email"}
+    try:
+        resp = await _request("PUT", "/config/apps/tls/automation/email", json=email)
+        resp.raise_for_status()
+        return {"result": {"email": email, "set": True}}
+    except Exception as e:
+        return _err(e, "set_acme_email")
+
+
+@mcp.tool()
+async def add_sse_route(
+    host: str,
+    upstream: str,
+    path: str = "",
+    server_name: str = "",
+) -> dict:
+    """Add a Server-Sent Events (SSE) reverse proxy route. Sets flush_interval=-1 to disable buffering so events stream to clients in real time. host: virtual host. upstream: backend SSE server (e.g. 'localhost:8080'). path: optional path prefix to restrict matching (e.g. '/events', '/sse')."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_sse_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_sse_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        match: dict = {"host": [host.strip()]}
+        if path.strip():
+            p = path.strip().rstrip("/")
+            match["path"] = [p + "/*", p] if not p.endswith("*") else [p]
+        route = {
+            "match": [match],
+            "handle": [{
+                "handler": "reverse_proxy",
+                "flush_interval": -1,
+                "upstreams": [{"dial": upstream.strip()}],
+            }],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "upstream": upstream, "flush_interval": -1, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_sse_route")
+
+
 def main() -> None:
     mcp.run()
 
