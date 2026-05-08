@@ -72,7 +72,7 @@ async def get_config_path(config_path: str) -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return _err(e, "get_config_path")
+        err = _err(e, "get_config_path"); err["config_path"] = config_path; return err
 
 
 @mcp.tool()
@@ -567,7 +567,7 @@ async def update_config_path(config_path: str, value: str) -> dict:
         resp.raise_for_status()
         return {"result": {"updated": True, "path": config_path}}
     except Exception as e:
-        return _err(e, "update_config_path")
+        err = _err(e, "update_config_path"); err["config_path"] = config_path; return err
 
 
 @mcp.tool()
@@ -583,7 +583,7 @@ async def delete_config_path(config_path: str) -> dict:
         resp.raise_for_status()
         return {"result": {"deleted": True, "path": config_path}}
     except Exception as e:
-        return _err(e, "delete_config_path")
+        err = _err(e, "delete_config_path"); err["config_path"] = config_path; return err
 
 
 @mcp.tool()
@@ -1378,7 +1378,7 @@ async def add_maintenance_route(host: str, message: str = "Service temporarily u
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "status_code": 503, "server": server_name, "message": message}}
     except Exception as e:
-        return _err(e, "add_maintenance_route")
+        err = _err(e, "add_maintenance_route"); err["host"] = host; return err
 
 
 @mcp.tool()
@@ -1487,7 +1487,7 @@ async def add_websocket_route(host: str, upstream: str, server_name: str = "", p
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "flush_interval": -1, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_websocket_route")
+        err = _err(e, "add_websocket_route"); err["host"] = host; err["upstream"] = upstream; return err
 
 
 @mcp.tool()
@@ -1619,7 +1619,7 @@ async def add_try_files_route(host: str, root: str, fallback: str = "/index.html
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "root": root, "fallback": fallback, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_try_files_route")
+        err = _err(e, "add_try_files_route"); err["host"] = host; err["root"] = root; return err
 
 
 @mcp.tool()
@@ -1719,7 +1719,7 @@ async def add_global_headers(headers: str, server_name: str = "") -> dict:
         resp.raise_for_status()
         return {"result": {"added": True, "headers": parsed, "server": server_name, "scope": "global"}}
     except Exception as e:
-        return _err(e, "add_global_headers")
+        err = _err(e, "add_global_headers"); err["server_name"] = server_name; return err
 
 
 @mcp.tool()
@@ -1749,7 +1749,7 @@ async def move_route(server_name: str, from_index: int, to_index: int) -> dict:
         put_resp.raise_for_status()
         return {"result": {"moved": True, "from_index": from_index, "to_index": to_index, "server": server_name}}
     except Exception as e:
-        return _err(e, "move_route")
+        err = _err(e, "move_route"); err["server_name"] = server_name; err["from_index"] = from_index; err["to_index"] = to_index; return err
 
 
 @mcp.tool()
@@ -1864,7 +1864,7 @@ async def duplicate_route(server_name: str, source_index: int, insert_index: int
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "copied_from": source_index, "inserted_at": new_index, "total_routes": len(routes)}}
     except Exception as e:
-        return _err(e, "duplicate_route")
+        err = _err(e, "duplicate_route"); err["server_name"] = server_name; err["source_index"] = source_index; return err
 
 
 @mcp.tool()
@@ -2046,7 +2046,7 @@ async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_p
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "upstream": upstream, "transport": "h2c/HTTP2", "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_grpc_route")
+        err = _err(e, "add_grpc_route"); err["host"] = host; err["upstream"] = upstream; return err
 
 
 @mcp.tool()
