@@ -133,6 +133,13 @@ async def create_server(server_name: str, listen: str = ":443") -> dict:
     listen_addrs = [a.strip() for a in listen.split(",") if a.strip()]
     if not listen_addrs:
         return {"error": "listen must not be empty", "tool": "create_server"}
+    import re as _re_ls
+    for addr in listen_addrs:
+        if not _re_ls.match(r'^(.*):(\d{1,5})$', addr):
+            return {"error": f"Invalid listen address '{addr}': must be host:port or :port (e.g. ':443', '0.0.0.0:80')", "tool": "create_server"}
+        port_str = addr.rsplit(":", 1)[-1]
+        if not (1 <= int(port_str) <= 65535):
+            return {"error": f"Invalid port {port_str} in listen address '{addr}': must be 1-65535", "tool": "create_server"}
     try:
         server_cfg = {"listen": listen_addrs, "routes": []}
         resp = await _request("PUT", f"/config/apps/http/servers/{server_name}", json=server_cfg)
