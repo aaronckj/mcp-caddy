@@ -472,16 +472,11 @@ async def mark_upstream_health(upstream_address: str, healthy: bool) -> dict:
 async def get_certificates() -> dict:
     """List TLS automation policies from Caddy config: domains, ACME issuers, and CAs. Returns policies, not live certificate objects — use list_loaded_certs to see the actual certificate cache."""
     try:
-        resp = await _request("GET", "/config/")
+        resp = await _request("GET", "/config/apps/tls/automation/policies")
+        if resp.status_code == 404:
+            return {"result": []}
         resp.raise_for_status()
-        config = resp.json()
-
-        policies = (
-            config.get("apps", {})
-            .get("tls", {})
-            .get("automation", {})
-            .get("policies", [])
-        )
+        policies = resp.json() or []
 
         certs = []
         for policy in policies:
