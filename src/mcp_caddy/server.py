@@ -608,6 +608,40 @@ async def list_pki_cas() -> dict:
     except Exception as e:
         return _err(e, "list_pki_cas")
 
+
+@mcp.tool()
+async def update_listen_addresses(server_name: str, listen_addresses: str) -> dict:
+    """Update the listen addresses for an existing Caddy HTTP server block without touching routes. listen_addresses: comma-separated bind addresses (e.g., ':80,:443'). Changes take effect immediately."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "update_listen_addresses"}
+    if not listen_addresses or not listen_addresses.strip():
+        return {"error": "listen_addresses must not be empty", "tool": "update_listen_addresses"}
+    listen = [a.strip() for a in listen_addresses.split(",") if a.strip()]
+    try:
+        resp = await _request(
+            "PATCH",
+            f"/config/apps/http/servers/{server_name.strip()}/listen",
+            json=listen,
+        )
+        resp.raise_for_status()
+        return {"result": {"updated": True, "name": server_name.strip(), "listen": listen}}
+    except Exception as e:
+        return _err(e, "update_listen_addresses")
+
+
+@mcp.tool()
+async def get_pki_ca(ca_name: str) -> dict:
+    """Get details for a Caddy PKI certificate authority: root cert, intermediate cert PEM, signing policy, and lifetime. Use list_pki_cas to find CA names. Default local CA is named 'local'."""
+    if not ca_name or not ca_name.strip():
+        return {"error": "ca_name must not be empty", "tool": "get_pki_ca"}
+    try:
+        resp = await _request("GET", f"/pki/ca/{ca_name.strip()}")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "get_pki_ca")
+
+
 def main() -> None:
     mcp.run()
 
