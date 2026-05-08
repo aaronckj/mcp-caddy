@@ -435,6 +435,7 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
     except Exception as e:
         err = _err(e, "add_header_route")
         err["host"] = host
+        err["header_name"] = header_name
         return err
 
 
@@ -1191,7 +1192,10 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
         put_resp.raise_for_status()
         return {"result": {"host": host, "header": header_name, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
-        err = _err(e, "add_request_header_route"); err["host"] = host; return err
+        err = _err(e, "add_request_header_route")
+        err["host"] = host
+        err["header_name"] = header_name
+        return err
 
 
 @mcp.tool()
