@@ -623,6 +623,23 @@ async def update_tls_policy(policy_index: int, subjects: str = "", ca_url: str =
 
 
 @mcp.tool()
+async def get_tls_policy(policy_index: int) -> dict:
+    """Get a single TLS automation policy by its 0-based index. Returns subjects, issuers, and ACME settings. Use list_tls_policies to see all indices."""
+    if policy_index < 0:
+        return {"error": "policy_index must be >= 0", "tool": "get_tls_policy"}
+    try:
+        resp = await _request("GET", f"/config/apps/tls/automation/policies/{policy_index}")
+        resp.raise_for_status()
+        return {"result": {"index": policy_index, "policy": resp.json()}}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {"error": f"TLS policy at index {policy_index} not found", "tool": "get_tls_policy"}
+        return _err(e, "get_tls_policy")
+    except Exception as e:
+        return _err(e, "get_tls_policy")
+
+
+@mcp.tool()
 async def delete_tls_policy(policy_index: int) -> dict:
     """Delete a TLS automation policy by its 0-based index. Use list_tls_policies to see indices. Changes take effect immediately."""
     if policy_index < 0:
@@ -652,7 +669,7 @@ async def update_route(server_name: str, route_index: int, config_json: str) -> 
         return {"error": f"Invalid JSON: {e}", "tool": "update_route"}
     try:
         resp = await _request(
-            "PATCH",
+            "PUT",
             f"/config/apps/http/servers/{server_name}/routes/{route_index}",
             json=route_config,
         )
