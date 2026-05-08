@@ -451,6 +451,42 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
     except Exception as e:
         return _err(e, "add_tls_policy")
 
+
+@mcp.tool()
+async def update_route(server_name: str, route_index: int, config_json: str) -> dict:
+    """Replace a route in-place by index. config_json: full route JSON object. Use get_route to retrieve the current config, modify it, then pass it here. Changes take effect immediately."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "update_route"}
+    if route_index < 0:
+        return {"error": "route_index must be >= 0", "tool": "update_route"}
+    if not config_json or not config_json.strip():
+        return {"error": "config_json must not be empty", "tool": "update_route"}
+    try:
+        route_config = json.loads(config_json)
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON: {e}", "tool": "update_route"}
+    try:
+        resp = await _request(
+            "PATCH",
+            f"/config/apps/http/servers/{server_name}/routes/{route_index}",
+            json=route_config,
+        )
+        resp.raise_for_status()
+        return {"result": {"updated": True, "server_name": server_name, "route_index": route_index}}
+    except Exception as e:
+        return _err(e, "update_route")
+
+
+@mcp.tool()
+async def list_pki_cas() -> dict:
+    """List Caddy-managed PKI certificate authorities (local CAs used for internal TLS / mTLS). Returns CA names and certificate info."""
+    try:
+        resp = await _request("GET", "/pki/ca")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "list_pki_cas")
+
 def main() -> None:
     mcp.run()
 
