@@ -2318,7 +2318,7 @@ async def set_acme_email(email: str) -> dict:
         resp.raise_for_status()
         return {"result": {"email": email, "set": True}}
     except Exception as e:
-        return _err(e, "set_acme_email")
+        err = _err(e, "set_acme_email"); err["email"] = email; return err
 
 
 @mcp.tool()
