@@ -813,7 +813,7 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
                 return {"error": "No HTTP servers configured in Caddy", "tool": "add_rewrite_route"}
             server_name = next(iter(servers))
         route = {
-            "match": [{"host": [host.strip()], "path": [prefix + "/*"]}],
+            "match": [{"host": [host.strip()], "path": [prefix, prefix + "/*"]}],
             "handle": [
                 {"handler": "rewrite", "strip_path_prefix": prefix},
                 {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]},
@@ -889,6 +889,62 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
         return {"result": {"added": True, "host": host.strip(), "header": header_name.strip(), "server": server_name}}
     except Exception as e:
         return _err(e, "add_request_header_route")
+
+
+@mcp.tool()
+async def add_cors_route(
+    host: str,
+    allow_origins: str = "*",
+    allow_methods: str = "GET,POST,PUT,DELETE,OPTIONS",
+    allow_headers: str = "Content-Type,Authorization",
+    max_age: int = 3600,
+    server_name: str = "",
+) -> dict:
+    """Add a CORS (Cross-Origin Resource Sharing) route for a host. Sets Access-Control-Allow-Origin, Access-Control-Allow-Methods, Access-Control-Allow-Headers, and Access-Control-Max-Age response headers. host: domain to match. allow_origins: comma-separated origins or '*'. allow_methods: comma-separated HTTP methods. allow_headers: comma-separated header names. max_age: preflight cache seconds. server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_cors_route"}
+    origins = allow_origins.strip() or "*"
+    methods = allow_methods.strip() or "GET,POST,PUT,DELETE,OPTIONS"
+    headers = allow_headers.strip() or "Content-Type,Authorization"
+    max_age = max(0, max_age)
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_cors_route"}
+            server_name = next(iter(servers))
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{
+                "handler": "headers",
+                "response": {
+                    "set": {
+                        "Access-Control-Allow-Origin": [origins],
+                        "Access-Control-Allow-Methods": [methods],
+                        "Access-Control-Allow-Headers": [headers],
+                        "Access-Control-Max-Age": [str(max_age)],
+                    }
+                },
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {
+            "result": {
+                "added": True,
+                "host": host.strip(),
+                "allow_origins": origins,
+                "allow_methods": methods,
+                "allow_headers": headers,
+                "max_age": max_age,
+                "server": server_name,
+            }
+        }
+    except Exception as e:
+        return _err(e, "add_cors_route")
 
 
 def main() -> None:
