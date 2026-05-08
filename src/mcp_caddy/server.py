@@ -1803,6 +1803,24 @@ async def add_forward_auth_route(
         return _err(e, "add_forward_auth_route")
 
 
+@mcp.tool()
+async def get_metrics() -> dict:
+    """Get Caddy Prometheus metrics from the /metrics endpoint. Returns raw metric text in Prometheus exposition format. Requires the metrics module to be loaded (add 'metrics' to the Caddy config or Caddyfile global options)."""
+    try:
+        resp = await _request("GET", "/metrics")
+        resp.raise_for_status()
+        lines = resp.text.splitlines()
+        metrics: dict[str, str] = {}
+        for line in lines:
+            if line and not line.startswith("#"):
+                parts = line.split(" ", 1)
+                if len(parts) == 2:
+                    metrics[parts[0]] = parts[1]
+        return {"result": {"raw_lines": len(lines), "metrics": metrics}}
+    except Exception as e:
+        return _err(e, "get_metrics")
+
+
 def main() -> None:
     mcp.run()
 
