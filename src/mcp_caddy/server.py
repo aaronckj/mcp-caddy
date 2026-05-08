@@ -852,6 +852,8 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
     if not new_upstream or not new_upstream.strip():
         return {"error": "new_upstream must not be empty", "tool": "update_upstream"}
     new_upstream = new_upstream.strip()
+    if err := _validate_upstream_dial(new_upstream):
+        return {"error": err, "tool": "update_upstream"}
     try:
         resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
         resp.raise_for_status()
@@ -1341,9 +1343,9 @@ async def get_route(server_name: str, route_index: int) -> dict:
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             return {"error": f"Route index {route_index} not found in server '{server_name}'", "tool": "get_route"}
-        return _err(e, "get_route")
+        err = _err(e, "get_route"); err["server_name"] = server_name; err["route_index"] = route_index; return err
     except Exception as e:
-        return _err(e, "get_route")
+        err = _err(e, "get_route"); err["server_name"] = server_name; err["route_index"] = route_index; return err
 
 
 @mcp.tool()
@@ -1546,7 +1548,7 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "php_fpm": php_fpm_address, "root": root.strip() or None, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_php_fastcgi_route")
+        err = _err(e, "add_php_fastcgi_route"); err["host"] = host; return err
 
 
 @mcp.tool()
@@ -1575,7 +1577,7 @@ async def set_server_timeouts(server_name: str, read_timeout: str = "", read_hea
         put_resp.raise_for_status()
         return {"result": {"updated": True, "server": server_name, "timeouts": timeouts}}
     except Exception as e:
-        return _err(e, "set_server_timeouts")
+        err = _err(e, "set_server_timeouts"); err["server_name"] = server_name; return err
 
 
 @mcp.tool()
@@ -1779,7 +1781,7 @@ async def add_trusted_proxies(ranges: str = "private_ranges", server_name: str =
             patch_resp.raise_for_status()
         return {"result": {"configured": True, "server": server_name, "trusted_proxies": trusted}}
     except Exception as e:
-        return _err(e, "add_trusted_proxies")
+        err = _err(e, "add_trusted_proxies"); err["server_name"] = server_name; return err
 
 
 @mcp.tool()
@@ -1999,7 +2001,7 @@ async def delete_error_handler_route(host: str, server_name: str = "") -> dict:
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "removed": removed}}
     except Exception as e:
-        return _err(e, "delete_error_handler_route")
+        err = _err(e, "delete_error_handler_route"); err["host"] = host; return err
 
 
 @mcp.tool()
@@ -2075,7 +2077,7 @@ async def add_response_delete_header_route(host: str, header_names: str, server_
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "deleted_headers": headers_to_delete, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_response_delete_header_route")
+        err = _err(e, "add_response_delete_header_route"); err["host"] = host; return err
 
 
 
@@ -2602,7 +2604,7 @@ async def disable_server_access_log(server_name: str) -> dict:
         resp.raise_for_status()
         return {"result": {"server": server_name, "access_log_disabled": True}}
     except Exception as e:
-        return _err(e, "disable_server_access_log")
+        err = _err(e, "disable_server_access_log"); err["server_name"] = server_name; return err
 
 
 @mcp.tool()
