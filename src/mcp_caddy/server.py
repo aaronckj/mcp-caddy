@@ -642,6 +642,41 @@ async def get_pki_ca(ca_name: str) -> dict:
         return _err(e, "get_pki_ca")
 
 
+
+@mcp.tool()
+async def update_upstream(server_name: str, route_index: int, new_upstream: str) -> dict:
+    """Update the backend dial address for a reverse proxy route. Fetches the route, replaces all upstream dial addresses, and PATCHes in-place. Use list_routes to find server_name and route_index. new_upstream: e.g. 'localhost:8080' or '10.0.0.5:3000'."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "update_upstream"}
+    if route_index < 0:
+        return {"error": "route_index must be >= 0", "tool": "update_upstream"}
+    if not new_upstream or not new_upstream.strip():
+        return {"error": "new_upstream must not be empty", "tool": "update_upstream"}
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
+        resp.raise_for_status()
+        route = resp.json()
+
+        modified = False
+        for handle in route.get("handle", []):
+            if handle.get("handler") == "reverse_proxy":
+                handle["upstreams"] = [{"dial": new_upstream.strip()}]
+                modified = True
+
+        if not modified:
+            return {"error": f"Route {route_index} has no reverse_proxy handler; use update_route for other handler types", "tool": "update_upstream"}
+
+        patch_resp = await _request(
+            "PATCH",
+            f"/config/apps/http/servers/{server_name}/routes/{route_index}",
+            json=route,
+        )
+        patch_resp.raise_for_status()
+        return {"result": {"updated": True, "server": server_name, "route_index": route_index, "upstream": new_upstream.strip()}}
+    except Exception as e:
+        return _err(e, "update_upstream")
+
+
 def main() -> None:
     mcp.run()
 
