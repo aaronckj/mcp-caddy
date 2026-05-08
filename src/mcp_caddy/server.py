@@ -2490,6 +2490,59 @@ async def add_not_found_route(
         return _err(e, "add_not_found_route")
 
 
+@mcp.tool()
+async def add_circuit_breaker_route(
+    host: str,
+    upstream: str,
+    server_name: str = "",
+    path_prefix: str = "",
+    max_fails: int = 3,
+    fail_duration: str = "30s",
+    unhealthy_latency: str = "10s",
+) -> dict:
+    """Add a reverse proxy route with passive circuit breaking: upstream is automatically marked unhealthy after max_fails failures within fail_duration, and recovers automatically. Requests to an unhealthy upstream are dropped until the circuit resets. max_fails: consecutive failures before marking unhealthy (default 3). fail_duration: window for counting failures (e.g. '30s', '1m'). unhealthy_latency: response latency threshold that counts as a failure (e.g. '10s')."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_circuit_breaker_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_circuit_breaker_route"}
+    if max_fails < 1:
+        return {"error": "max_fails must be at least 1", "tool": "add_circuit_breaker_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        match: dict = {"host": [host.strip()]}
+        if path_prefix and path_prefix.strip():
+            prefix = path_prefix.strip().rstrip("/")
+            if not prefix.startswith("/"):
+                prefix = "/" + prefix
+            match["path"] = [prefix + "/*", prefix]
+        route = {
+            "match": [match],
+            "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{"dial": upstream.strip()}],
+                "health_checks": {
+                    "passive": {
+                        "fail_duration": fail_duration,
+                        "max_fails": max_fails,
+                        "unhealthy_status": [500, 502, 503, 504],
+                        "unhealthy_latency": unhealthy_latency,
+                    }
+                },
+            }],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "upstream": upstream, "max_fails": max_fails, "fail_duration": fail_duration, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_circuit_breaker_route")
+
+
 def main() -> None:
     mcp.run()
 
