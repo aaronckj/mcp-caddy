@@ -605,7 +605,8 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
 
     try:
         pol_resp = await _request("GET", "/config/apps/tls/automation/policies")
-        policies = (pol_resp.json() or []) if pol_resp.status_code == 200 else []
+        pol_resp.raise_for_status()
+        policies = pol_resp.json() or []
         policies.append(policy)
 
         # PATCH /config/apps/tls/automation — works if TLS app exists.
@@ -1977,6 +1978,9 @@ async def add_redirect_route(
 @mcp.tool()
 async def duplicate_route(server_name: str, source_index: int, insert_index: int = -1) -> dict:
     """Copy an existing route to a new position in the route list. source_index: zero-based index of the route to copy. insert_index: position to insert the copy (-1 = append at end). Useful for creating variations of an existing route."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "duplicate_route"}
+    server_name = server_name.strip()
     try:
         resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         resp.raise_for_status()
