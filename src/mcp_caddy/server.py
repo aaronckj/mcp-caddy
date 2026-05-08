@@ -122,6 +122,24 @@ async def delete_server(server_name: str) -> dict:
         return _err(e, "delete_server")
 
 
+@mcp.tool()
+async def create_server(server_name: str, listen: str = ":443") -> dict:
+    """Create a new Caddy HTTP server block. server_name: identifier (e.g. 'srv0', 'my_server'). listen: comma-separated listen addresses (e.g. ':443', ':80,:443'). The new server starts with no routes — use add_reverse_proxy_route or other add_*_route tools to populate it."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "create_server"}
+    server_name = server_name.strip()
+    listen_addrs = [a.strip() for a in listen.split(",") if a.strip()]
+    if not listen_addrs:
+        return {"error": "listen must not be empty", "tool": "create_server"}
+    try:
+        server_cfg = {"listen": listen_addrs, "routes": []}
+        resp = await _request("PUT", f"/config/apps/http/servers/{server_name}", json=server_cfg)
+        resp.raise_for_status()
+        return {"result": {"created": True, "name": server_name, "listen": listen_addrs}}
+    except Exception as e:
+        return _err(e, "create_server")
+
+
 def _extract_upstreams(handles: list) -> list[str]:
     """Extract upstream dial addresses, recursing into subroute handlers."""
     upstreams = []
