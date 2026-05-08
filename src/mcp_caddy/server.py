@@ -195,8 +195,8 @@ async def list_routes() -> dict:
 
 
 @mcp.tool()
-async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "", path_prefix: str = "") -> dict:
-    """Add a reverse proxy route to Caddy. host: domain (e.g. 'app.example.com'). upstream: backend dial address (e.g. 'localhost:3000'). path_prefix: optional URL path prefix to match in addition to host (e.g. '/api/*'). server_name: auto-detects first server if empty."""
+async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "", path_prefix: str = "", health_path: str = "", health_interval: str = "") -> dict:
+    """Add a reverse proxy route to Caddy. host: domain (e.g. 'app.example.com'). upstream: backend dial address (e.g. 'localhost:3000'). path_prefix: optional URL path prefix to match in addition to host (e.g. '/api/*'). server_name: auto-detects first server if empty. health_path: optional active health check path (e.g. '/health'). health_interval: optional health check interval as Go duration (e.g. '10s', '1m') — only used if health_path is set."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_reverse_proxy_route"}
     host = host.strip()
@@ -224,13 +224,18 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
                 match_rule["path"] = [p, p + "/*"]
             else:
                 match_rule["path"] = [p]
+        handler: dict = {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}
+        if health_path and health_path.strip():
+            handler["health_checks"] = {"active": {"path": health_path.strip()}}
+            if health_interval and health_interval.strip():
+                handler["health_checks"]["active"]["interval"] = health_interval.strip()
         route = {
             "match": [match_rule],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
+            "handle": [handler],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "server": server_name}}
+        return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "health_path": health_path.strip() or None, "server": server_name}}
     except Exception as e:
         return _err(e, "add_reverse_proxy_route")
 
