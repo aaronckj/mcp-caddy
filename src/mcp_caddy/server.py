@@ -1027,7 +1027,7 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
                     "providers": {
                         "http_basic": {
                             "hash": {"algorithm": "bcrypt"},
-                            "accounts": [{"id": username.strip(), "password": hashed_password.strip()}],
+                            "accounts": [{"username": username.strip(), "password": hashed_password.strip()}],
                         }
                     },
                 },
@@ -1929,8 +1929,11 @@ async def move_route(server_name: str, from_index: int, to_index: int) -> dict:
         return {"result": {"moved": False, "note": "from_index and to_index are the same"}}
     try:
         resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        resp.raise_for_status()
-        routes = resp.json() or []
+        if resp.status_code == 404:
+            routes = []
+        else:
+            resp.raise_for_status()
+            routes = resp.json() or []
         n = len(routes)
         if from_index >= n:
             return {"error": f"from_index {from_index} out of range (server has {n} routes)", "tool": "move_route"}
