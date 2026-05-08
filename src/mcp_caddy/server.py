@@ -1661,7 +1661,7 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
                             "handler": "reverse_proxy",
                             "transport": {
                                 "protocol": "fastcgi",
-                                "root": root.strip() if root and root.strip() else "",
+                                **( {"root": root.strip()} if root and root.strip() else {} ),
                             },
                             "upstreams": [{"dial": php_fpm_address}],
                         }],
@@ -2035,6 +2035,7 @@ async def add_redirect_route(
     """Add a redirect route. If target is empty, redirects HTTP → HTTPS (same host, same URI). target: full URL or {scheme}://{host}{uri} template. status_code: 301 (permanent) or 302 (temporary). path_prefix: optional path to restrict redirect scope."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_redirect_route"}
+    host = host.strip()
     if status_code not in {301, 302, 307, 308}:
         return {"error": f"status_code must be 301, 302, 307, or 308 for a redirect, got {status_code}", "tool": "add_redirect_route"}
     try:
@@ -2195,7 +2196,6 @@ async def add_error_handler_route(
                 "handle": [{"handler": "static_response", "status_code": "{http.error.status_code}",
                              "headers": {"Content-Type": [content_type]}, "body": body}],
             }]}],
-            "terminal": True,
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/errors")
         if get_resp.status_code == 200:
