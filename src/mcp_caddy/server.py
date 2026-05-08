@@ -1493,6 +1493,64 @@ async def set_server_timeouts(server_name: str, read_timeout: str = "", read_hea
         return _err(e, "set_server_timeouts")
 
 
+@mcp.tool()
+async def add_try_files_route(host: str, root: str, fallback: str = "/index.html", server_name: str = "") -> dict:
+    """Add a static file server route with try_files fallback — the standard pattern for SPAs (React, Vue, Angular, Svelte). Serves files from root on disk; if a file or directory is not found, rewrites to fallback (default /index.html). host: domain to match. root: filesystem path for static files (e.g. '/var/www/app/dist'). fallback: path to fall back to when file not found (default /index.html). server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_try_files_route"}
+    host = host.strip()
+    if not root or not root.strip():
+        return {"error": "root must not be empty", "tool": "add_try_files_route"}
+    root = root.strip()
+    fallback = (fallback or "/index.html").strip()
+    if not fallback.startswith("/"):
+        fallback = "/" + fallback
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_try_files_route"}
+            server_name = next(iter(servers))
+        server_name = server_name.strip()
+        route = {
+            "match": [{"host": [host]}],
+            "handle": [{
+                "handler": "subroute",
+                "routes": [
+                    {
+                        "match": [{"not": [{"file": {"root": root, "try_files": ["{http.request.uri.path}", "{http.request.uri.path}/"]}}]}],
+                        "handle": [{"handler": "rewrite", "uri": fallback}],
+                    },
+                    {
+                        "handle": [{"handler": "file_server", "root": root}],
+                    },
+                ],
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "root": root, "fallback": fallback, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_try_files_route")
+
+
+@mcp.tool()
+async def get_pki_ca_certificates(ca_name: str = "local") -> dict:
+    """Get the certificate chain (root and intermediate PEM certificates) for a Caddy PKI certificate authority. Returns PEM-encoded root and intermediate certificates, useful for trust anchor configuration and certificate pinning. ca_name: CA name (default 'local' for the built-in local CA). Use list_pki_cas to find available CAs."""
+    ca_name = (ca_name or "local").strip()
+    if not ca_name:
+        return {"error": "ca_name must not be empty", "tool": "get_pki_ca_certificates"}
+    try:
+        resp = await _request("GET", f"/pki/ca/{ca_name}/certificates")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "get_pki_ca_certificates")
+
+
 def main() -> None:
     mcp.run()
 
