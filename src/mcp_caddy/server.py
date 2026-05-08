@@ -1859,7 +1859,8 @@ async def add_redirect_route(
         redirect_to = target.strip() if target.strip() else "https://{http.request.host}{http.request.uri}"
         match: dict = {"host": [host]}
         if path_prefix.strip():
-            match["path"] = [path_prefix.strip().rstrip("/") + "*"]
+            prefix = path_prefix.strip().rstrip("/")
+            match["path"] = [prefix + "/*", prefix]
         route = {
             "match": [match],
             "handle": [{"handler": "static_response", "status_code": status_code, "headers": {"Location": [redirect_to]}}],
