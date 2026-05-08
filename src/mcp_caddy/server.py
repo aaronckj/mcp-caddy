@@ -1908,6 +1908,35 @@ async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_p
         return _err(e, "add_grpc_route")
 
 
+@mcp.tool()
+async def add_response_delete_header_route(host: str, header_names: str, server_name: str = "") -> dict:
+    """Add a route that strips one or more response headers from all replies to a given host. Useful for removing server fingerprinting headers like 'X-Powered-By', 'Server', 'X-AspNet-Version'. header_names: comma-separated list of header names to delete."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_response_delete_header_route"}
+    if not header_names or not header_names.strip():
+        return {"error": "header_names must not be empty", "tool": "add_response_delete_header_route"}
+    headers_to_delete = [h.strip() for h in header_names.split(",") if h.strip()]
+    if not headers_to_delete:
+        return {"error": "header_names must contain at least one header name", "tool": "add_response_delete_header_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "headers", "response": {"delete": headers_to_delete}}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "deleted_headers": headers_to_delete, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_response_delete_header_route")
+
+
 def main() -> None:
     mcp.run()
 
