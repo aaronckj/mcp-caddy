@@ -1026,7 +1026,6 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
                     "handler": "authentication",
                     "providers": {
                         "http_basic": {
-                            "hash": {"algorithm": "bcrypt"},
                             "accounts": [{"username": username.strip(), "password": hashed_password.strip()}],
                         }
                     },
