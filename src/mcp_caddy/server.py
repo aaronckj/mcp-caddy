@@ -2291,6 +2291,12 @@ async def add_retry_route(
     err = _validate_upstream_dial(upstream)
     if err:
         return {"error": err, "tool": "add_retry_route"}
+    if retries < 1:
+        return {"error": "retries must be >= 1", "tool": "add_retry_route"}
+    if max_fails < 1:
+        return {"error": "max_fails must be >= 1", "tool": "add_retry_route"}
+    if fail_duration < 1:
+        return {"error": "fail_duration must be >= 1 second", "tool": "add_retry_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2364,7 +2370,10 @@ async def add_strip_prefix_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "prefix": prefix, "upstream": upstream, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_strip_prefix_route")
+        err = _err(e, "add_strip_prefix_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -2426,9 +2435,13 @@ async def add_method_match_route(
     err = _validate_upstream_dial(upstream)
     if err:
         return {"error": err, "tool": "add_method_match_route"}
+    _VALID_HTTP_METHODS = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
     method_list = [m.strip().upper() for m in methods.split(",") if m.strip()]
     if not method_list:
         return {"error": "methods must contain at least one valid HTTP method", "tool": "add_method_match_route"}
+    invalid = [m for m in method_list if m not in _VALID_HTTP_METHODS]
+    if invalid:
+        return {"error": f"Invalid HTTP methods: {', '.join(invalid)}. Valid: {', '.join(sorted(_VALID_HTTP_METHODS))}", "tool": "add_method_match_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2695,7 +2708,10 @@ async def add_circuit_breaker_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "upstream": upstream, "max_fails": max_fails, "fail_duration": fail_duration, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_circuit_breaker_route")
+        err = _err(e, "add_circuit_breaker_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
