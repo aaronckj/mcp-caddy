@@ -973,20 +973,33 @@ async def delete_route_by_host(host: str, server_name: str = "") -> dict:
         for srv_name, server in target_servers.items():
             routes = server.get("routes", [])
             kept = []
+            srv_deleted = 0
             for route in routes:
                 route_hosts = []
                 for match in route.get("match", []):
                     route_hosts.extend(match.get("host", []))
                 if host in route_hosts:
-                    total_deleted += 1
+                    srv_deleted += 1
                 else:
                     kept.append(route)
-            if total_deleted > 0:
+            if srv_deleted > 0:
                 upd = await _request("PUT", f"/config/apps/http/servers/{srv_name}/routes", json=kept)
                 upd.raise_for_status()
+                total_deleted += srv_deleted
         return {"result": {"host": host, "deleted": total_deleted}}
     except Exception as e:
         return _err(e, "delete_route_by_host")
+
+
+@mcp.tool()
+async def list_modules() -> dict:
+    """List all Caddy modules currently loaded in the running server. Useful for checking whether optional modules (rate_limit, crowdsec, etc.) are available before trying to use them in routes."""
+    try:
+        resp = await _request("GET", "/modules")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "list_modules")
 
 
 def main() -> None:
