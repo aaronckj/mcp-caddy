@@ -1726,7 +1726,7 @@ async def add_redirect_route(
             match["path"] = [path_prefix.strip().rstrip("/") + "*"]
         route = {
             "match": [match],
-            "handle": [{"handler": "static_response", "status_code": str(status_code), "headers": {"Location": [redirect_to]}}],
+            "handle": [{"handler": "static_response", "status_code": status_code, "headers": {"Location": [redirect_to]}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         routes = get_resp.json() or [] if get_resp.status_code == 200 else []
@@ -1736,23 +1736,6 @@ async def add_redirect_route(
         return {"result": {"server": server_name, "host": host, "redirect_to": redirect_to, "status_code": status_code, "route_index": len(routes) - 1}}
     except Exception as e:
         return _err(e, "add_redirect_route")
-
-
-@mcp.tool()
-async def delete_route(server_name: str, route_index: int) -> dict:
-    """Delete a route by its zero-based index within a Caddy server's route list. Use list_routes or get_routes_by_host to find the index before deleting. WARNING: indexes shift after deletion."""
-    try:
-        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        resp.raise_for_status()
-        routes = resp.json() or []
-        if route_index < 0 or route_index >= len(routes):
-            return {"error": f"route_index {route_index} out of range (0–{len(routes) - 1})", "tool": "delete_route"}
-        removed = routes.pop(route_index)
-        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
-        put_resp.raise_for_status()
-        return {"result": {"server": server_name, "deleted_index": route_index, "deleted_route": removed, "remaining_routes": len(routes)}}
-    except Exception as e:
-        return _err(e, "delete_route")
 
 
 def main() -> None:
