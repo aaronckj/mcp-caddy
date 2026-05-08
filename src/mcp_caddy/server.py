@@ -1523,7 +1523,7 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
     lb_policy = lb_policy.strip().lower()
     if lb_policy not in _VALID_POLICIES:
         return {"error": f"Invalid lb_policy '{lb_policy}'. Valid: {', '.join(sorted(_VALID_POLICIES))}", "tool": "add_load_balanced_route"}
-    selection_policy: dict = {"policy": lb_policy}
+    selection_policy: dict = {"module": lb_policy}
     if lb_policy == "cookie":
         selection_policy["name"] = cookie_name.strip() or "lb_cookie"
     try:
