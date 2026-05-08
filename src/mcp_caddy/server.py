@@ -1551,6 +1551,30 @@ async def get_pki_ca_certificates(ca_name: str = "local") -> dict:
         return _err(e, "get_pki_ca_certificates")
 
 
+@mcp.tool()
+async def list_virtual_hosts() -> dict:
+    """List all virtual hosts (domain names) configured across all Caddy HTTP servers. Scans every route in every server block and extracts unique hostname values from host matchers. Useful for a quick overview of what domains Caddy is serving and which server block each belongs to."""
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json() or {}
+        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        hosts: dict[str, list[str]] = {}
+        for server_name, server_cfg in servers.items():
+            server_hosts: list[str] = []
+            for route in server_cfg.get("routes", []):
+                for matcher in route.get("match", []):
+                    for h in matcher.get("host", []):
+                        if h not in server_hosts:
+                            server_hosts.append(h)
+            if server_hosts:
+                hosts[server_name] = server_hosts
+        all_hosts = sorted({h for hl in hosts.values() for h in hl})
+        return {"result": {"servers": hosts, "all_hosts": all_hosts, "total": len(all_hosts)}}
+    except Exception as e:
+        return _err(e, "list_virtual_hosts")
+
+
 def main() -> None:
     mcp.run()
 
