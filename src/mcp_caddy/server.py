@@ -589,6 +589,44 @@ async def list_tls_policies() -> dict:
 
 
 @mcp.tool()
+async def update_tls_policy(policy_index: int, subjects: str = "", ca_url: str = "", email: str = "") -> dict:
+    """Update an existing TLS automation policy by index. Fetches the current policy, applies non-empty changes, and PUTs the result. Use list_tls_policies to find indices. subjects: comma-separated domains to replace subjects list. ca_url: new ACME CA URL. email: new ACME account email."""
+    if policy_index < 0:
+        return {"error": "policy_index must be >= 0", "tool": "update_tls_policy"}
+    if not subjects and not ca_url and not email:
+        return {"error": "At least one of subjects, ca_url, or email must be specified", "tool": "update_tls_policy"}
+    try:
+        resp = await _request("GET", f"/config/apps/tls/automation/policies/{policy_index}")
+        resp.raise_for_status()
+        policy = resp.json() or {}
+        if subjects and subjects.strip():
+            policy["subjects"] = [s.strip() for s in subjects.split(",") if s.strip()]
+        if ca_url and ca_url.strip():
+            issuers = policy.get("issuers", [{}])
+            if issuers:
+                issuers[0]["ca"] = ca_url.strip()
+            else:
+                issuers = [{"module": "acme", "ca": ca_url.strip()}]
+            policy["issuers"] = issuers
+        if email and email.strip():
+            issuers = policy.get("issuers", [{}])
+            if issuers:
+                issuers[0]["email"] = email.strip()
+            else:
+                issuers = [{"module": "acme", "email": email.strip()}]
+            policy["issuers"] = issuers
+        put_resp = await _request("PUT", f"/config/apps/tls/automation/policies/{policy_index}", json=policy)
+        put_resp.raise_for_status()
+        return {"result": {"updated": True, "index": policy_index}}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {"error": f"TLS policy at index {policy_index} not found", "tool": "update_tls_policy"}
+        return _err(e, "update_tls_policy")
+    except Exception as e:
+        return _err(e, "update_tls_policy")
+
+
+@mcp.tool()
 async def delete_tls_policy(policy_index: int) -> dict:
     """Delete a TLS automation policy by its 0-based index. Use list_tls_policies to see indices. Changes take effect immediately."""
     if policy_index < 0:
