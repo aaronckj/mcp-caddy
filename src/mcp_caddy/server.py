@@ -1515,7 +1515,7 @@ async def add_websocket_route(host: str, upstream: str, server_name: str = "", p
 
 @mcp.tool()
 async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:9000", root: str = "", server_name: str = "") -> dict:
-    """Add a PHP FastCGI route for serving PHP applications via PHP-FPM. host: domain to match. php_fpm_address: PHP-FPM socket or address — TCP (e.g. '127.0.0.1:9000') or Unix socket (e.g. 'unix//run/php/php8.2-fpm.sock'). root: filesystem root for PHP files (e.g. '/var/www/html'). server_name: auto-detects first server if empty. Adds a subroute that strips path info and proxies *.php requests via FastCGI, then falls back to static file_server for non-PHP assets."""
+    """Add a PHP FastCGI route for serving PHP applications via PHP-FPM. host: domain to match. php_fpm_address: PHP-FPM socket or address — TCP (e.g. '127.0.0.1:9000') or Unix socket (e.g. 'unix//run/php/php8.2-fpm.sock'). root: filesystem root for PHP files (e.g. '/var/www/html'). server_name: auto-detects first server if empty. Adds try_files (path → path/ → /index.php) for CMS clean URL support, then proxies *.php via FastCGI and falls back to static file_server for other assets."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_php_fastcgi_route"}
     host = host.strip()
@@ -1538,8 +1538,8 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
             handle.append({"handler": "vars", "root": root.strip()})
         handle.extend([
             {
-                "handler": "rewrite",
-                "uri": "{http.request.uri.path}{http.request.uri.query_string}",
+                "handler": "try_files",
+                "files": ["{http.request.uri.path}", "{http.request.uri.path}/", "/index.php{http.request.uri.query_string}"],
             },
             {
                 "handler": "subroute",
