@@ -675,12 +675,19 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
         resp.raise_for_status()
         route = resp.json()
 
-        modified = False
-        for handle in route.get("handle", []):
-            if handle.get("handler") == "reverse_proxy":
-                handle["upstreams"] = [{"dial": new_upstream.strip()}]
-                modified = True
+        def _patch_upstreams(handles: list, dial: str) -> bool:
+            found = False
+            for h in handles:
+                if h.get("handler") == "reverse_proxy":
+                    h["upstreams"] = [{"dial": dial}]
+                    found = True
+                elif h.get("handler") == "subroute":
+                    for sub in h.get("routes", []):
+                        if _patch_upstreams(sub.get("handle", []), dial):
+                            found = True
+            return found
 
+        modified = _patch_upstreams(route.get("handle", []), new_upstream.strip())
         if not modified:
             return {"error": f"Route {route_index} has no reverse_proxy handler; use update_route for other handler types", "tool": "update_upstream"}
 
@@ -1040,6 +1047,57 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
         }
     except Exception as e:
         return _err(e, "add_ip_filter_route")
+
+
+@mcp.tool()
+async def get_routes_by_host(host: str, server_name: str = "") -> dict:
+    """Get all routes matching a specific hostname without deleting them. Returns route objects with their indices so you can inspect, update, or delete specific routes. server_name: auto-searches all servers if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "get_routes_by_host"}
+    host = host.strip()
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json() or {}
+        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        if not servers:
+            return {"error": "No HTTP servers configured in Caddy", "tool": "get_routes_by_host"}
+        if server_name:
+            if server_name not in servers:
+                return {"error": f"Server '{server_name}' not found", "tool": "get_routes_by_host"}
+            target_servers = {server_name: servers[server_name]}
+        else:
+            target_servers = servers
+        matches = []
+        for srv_name, server in target_servers.items():
+            for idx, route in enumerate(server.get("routes", [])):
+                route_hosts = []
+                for match in route.get("match", []):
+                    route_hosts.extend(match.get("host", []))
+                if host in route_hosts:
+                    matches.append({"server_name": srv_name, "route_index": idx, "route": route})
+        return {"result": {"host": host, "matches": matches, "count": len(matches)}}
+    except Exception as e:
+        return _err(e, "get_routes_by_host")
+
+
+@mcp.tool()
+async def get_route(server_name: str, route_index: int) -> dict:
+    """Get a single route by server name and index. Use list_routes to find indices. Useful for inspecting a route before updating or deleting it."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "get_route"}
+    if route_index < 0:
+        return {"error": "route_index must be >= 0", "tool": "get_route"}
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name.strip()}/routes/{route_index}")
+        resp.raise_for_status()
+        return {"result": {"server_name": server_name.strip(), "route_index": route_index, "route": resp.json()}}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {"error": f"Route index {route_index} not found in server '{server_name}'", "tool": "get_route"}
+        return _err(e, "get_route")
+    except Exception as e:
+        return _err(e, "get_route")
 
 
 @mcp.tool()
