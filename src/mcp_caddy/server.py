@@ -803,6 +803,50 @@ async def add_https_redirect(host: str, http_server_name: str = "") -> dict:
 
 
 @mcp.tool()
+async def delete_https_redirect(host: str, http_server_name: str = "") -> dict:
+    """Remove the HTTP-to-HTTPS redirect route for a specific host from the :80 listener. Scans all routes on the server listening on :80 and removes any that match only this host with a 301 redirect handler. http_server_name: override auto-detected :80 server name."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "delete_https_redirect"}
+    host = host.strip()
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json() or {}
+        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        if http_server_name:
+            target_server = http_server_name.strip()
+        else:
+            target_server = next(
+                (name for name, srv in servers.items()
+                 if any(addr in (":80", ":http", "0.0.0.0:80") for addr in srv.get("listen", []))),
+                None,
+            )
+        if not target_server or target_server not in servers:
+            return {"error": "No server found listening on :80. Use list_servers to find HTTP redirect servers.", "tool": "delete_https_redirect"}
+        routes = servers[target_server].get("routes", [])
+        new_routes = []
+        removed = 0
+        for route in routes:
+            matchers = route.get("match", [{}])
+            hosts_in_route = matchers[0].get("host", []) if matchers else []
+            is_redirect = any(
+                h.get("handler") == "static_response" and h.get("status_code") in (301, "301")
+                for h in route.get("handle", [])
+            )
+            if hosts_in_route == [host] and is_redirect:
+                removed += 1
+            else:
+                new_routes.append(route)
+        if removed == 0:
+            return {"error": f"No HTTPS redirect route found for host '{host}' on server '{target_server}'", "tool": "delete_https_redirect"}
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{target_server}/routes", json=new_routes)
+        put_resp.raise_for_status()
+        return {"result": {"deleted": True, "host": host, "server": target_server, "routes_removed": removed}}
+    except Exception as e:
+        err = _err(e, "delete_https_redirect"); err["host"] = host; return err
+
+
+@mcp.tool()
 async def list_pki_cas() -> dict:
     """List Caddy-managed PKI certificate authorities (local CAs used for internal TLS / mTLS). Returns CA names and certificate info."""
     try:
@@ -1497,6 +1541,8 @@ async def add_websocket_route(host: str, upstream: str, server_name: str = "", p
         match_rule: dict = {"host": [host]}
         if path_prefix and path_prefix.strip():
             p = path_prefix.strip().rstrip("/")
+            if not p.startswith("/"):
+                p = "/" + p
             match_rule["path"] = [p, p + "/*"] if not p.endswith("*") else [p]
         route = {
             "match": [match_rule],
