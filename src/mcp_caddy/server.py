@@ -1458,8 +1458,8 @@ async def add_maintenance_route(host: str, message: str = "Service temporarily u
 
 
 @mcp.tool()
-async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "round_robin", server_name: str = "") -> dict:
-    """Add a reverse proxy route with load balancing across multiple backends. host: domain to match. upstreams: comma-separated backend addresses (e.g. 'host1:8080,host2:8080,host3:8080'). lb_policy: round_robin (default), least_conn, ip_hash, first, random, random_choose, cookie. server_name: auto-detects first server if empty."""
+async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "round_robin", cookie_name: str = "lb_cookie", server_name: str = "") -> dict:
+    """Add a reverse proxy route with load balancing across multiple backends. host: domain to match. upstreams: comma-separated backend addresses (e.g. 'host1:8080,host2:8080,host3:8080'). lb_policy: round_robin (default), least_conn, ip_hash, first, random, random_choose, cookie. cookie_name: cookie name used when lb_policy='cookie' (default 'lb_cookie'). server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_load_balanced_route"}
     host = host.strip()
@@ -1475,6 +1475,9 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
     lb_policy = lb_policy.strip().lower()
     if lb_policy not in _VALID_POLICIES:
         return {"error": f"Invalid lb_policy '{lb_policy}'. Valid: {', '.join(sorted(_VALID_POLICIES))}", "tool": "add_load_balanced_route"}
+    selection_policy: dict = {"policy": lb_policy}
+    if lb_policy == "cookie":
+        selection_policy["name"] = cookie_name.strip() or "lb_cookie"
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -1489,12 +1492,12 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
             "handle": [{
                 "handler": "reverse_proxy",
                 "upstreams": [{"dial": u} for u in upstream_list],
-                "load_balancing": {"selection_policy": {"policy": lb_policy}},
+                "load_balancing": {"selection_policy": selection_policy},
             }],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "upstreams": upstream_list, "lb_policy": lb_policy, "server": server_name}}
+        return {"result": {"added": True, "host": host, "upstreams": upstream_list, "lb_policy": lb_policy, "cookie_name": cookie_name if lb_policy == "cookie" else None, "server": server_name}}
     except Exception as e:
         err = _err(e, "add_load_balanced_route")
         err["host"] = host
@@ -1597,7 +1600,7 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
         handle.extend([
             {
                 "handler": "try_files",
-                "files": ["{http.request.uri.path}", "{http.request.uri.path}/", "/index.php{http.request.uri.query_string}"],
+                "files": ["{http.request.uri.path}", "{http.request.uri.path}/", "/index.php"],
             },
             {
                 "handler": "subroute",
