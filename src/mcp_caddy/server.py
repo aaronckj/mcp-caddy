@@ -1914,6 +1914,8 @@ async def add_forward_auth_route(
         return {"error": "host must not be empty", "tool": "add_forward_auth_route"}
     if not auth_url or not auth_url.strip():
         return {"error": "auth_url must not be empty", "tool": "add_forward_auth_route"}
+    if not auth_url.strip().startswith(("http://", "https://")):
+        return {"error": "auth_url must start with http:// or https://", "tool": "add_forward_auth_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_forward_auth_route"}
     upstream = upstream.strip()
@@ -1989,7 +1991,7 @@ async def add_error_handler_route(
         error_route = {
             "match": [{"host": [host.strip()]}],
             "handle": [{"handler": "subroute", "routes": [{
-                "match": [{"expression": f"{{{{http.error.status_code}}}} in [{', '.join(codes)}]"}],
+                "match": [{"expression": f"{{http.error.status_code}} in [{', '.join(codes)}]"}],
                 "handle": [{"handler": "static_response", "status_code": "{http.error.status_code}",
                              "headers": {"Content-Type": [content_type]}, "body": body}],
             }]}],
@@ -2278,6 +2280,11 @@ async def add_security_headers_route(
     """Add a route that sets a bundle of standard security response headers for a host. Covers HSTS, clickjacking protection, MIME sniffing prevention, and referrer policy. hsts_max_age: HSTS max-age in seconds (default 1 year). x_frame_options: DENY, SAMEORIGIN, or empty to omit. referrer_policy: see MDN for valid values."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_security_headers_route"}
+    _VALID_X_FRAME = {"DENY", "SAMEORIGIN", ""}
+    if x_frame_options.strip() not in _VALID_X_FRAME:
+        return {"error": f"x_frame_options must be 'DENY', 'SAMEORIGIN', or empty (to omit). Got '{x_frame_options}'", "tool": "add_security_headers_route"}
+    if hsts_max_age < 0:
+        return {"error": "hsts_max_age must be >= 0", "tool": "add_security_headers_route"}
     set_map: dict = {
         "Strict-Transport-Security": [f"max-age={hsts_max_age}" + ("; includeSubDomains" if hsts_subdomains else "")],
         "Referrer-Policy": [referrer_policy.strip()],
