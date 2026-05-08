@@ -2129,10 +2129,10 @@ async def add_forward_auth_route(
             forward_auth_handler["copy_headers"] = headers
         route = {
             "match": [{"host": [host.strip()]}],
-            "handle": [{"handler": "subroute", "routes": [
-                {"handle": [forward_auth_handler]},
-                {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}]},
-            ]}],
+            "handle": [
+                forward_auth_handler,
+                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
+            ],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         if get_resp.status_code == 404:
@@ -2281,6 +2281,7 @@ async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_p
                 "handler": "reverse_proxy",
                 "transport": {"protocol": "http", "versions": ["h2c", "2"]},
                 "upstreams": [{"dial": upstream.strip()}],
+                "flush_interval": -1,
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
@@ -2965,7 +2966,7 @@ async def add_cookie_match_route(
             resp.raise_for_status()
             server_name = next(iter(resp.json() or {}), "srv0")
         route = {
-            "match": [{"host": [host.strip()], "header_regexp": {"Cookie": f"(?:^|;\\s*){re.escape(cookie_name.strip())}={re.escape(cookie_value.strip())}(?:;|$)"}}],
+            "match": [{"host": [host.strip()], "header_regexp": {"Cookie": {"pattern": f"(?:^|;\\s*){re.escape(cookie_name.strip())}={re.escape(cookie_value.strip())}(?:;|$)"}}}],
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
