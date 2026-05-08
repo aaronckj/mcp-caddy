@@ -1264,6 +1264,41 @@ async def get_route(server_name: str, route_index: int) -> dict:
 
 
 @mcp.tool()
+async def add_maintenance_route(host: str, message: str = "Service temporarily unavailable. Please try again later.", server_name: str = "") -> dict:
+    """Add a maintenance mode route for a host — all requests return 503 Service Unavailable with a plain-text message. Useful for taking a site offline during deployments. To end maintenance, use delete_route_by_host or delete_route with the returned route_index. server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_maintenance_route"}
+    host = host.strip()
+    message = message.strip() or "Service temporarily unavailable. Please try again later."
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_maintenance_route"}
+            server_name = next(iter(servers))
+        route = {
+            "match": [{"host": [host]}],
+            "handle": [{
+                "handler": "static_response",
+                "status_code": 503,
+                "body": message,
+                "headers": {
+                    "Content-Type": ["text/plain; charset=utf-8"],
+                    "Retry-After": ["3600"],
+                },
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "status_code": 503, "server": server_name, "message": message}}
+    except Exception as e:
+        return _err(e, "add_maintenance_route")
+
+
+@mcp.tool()
 async def list_modules() -> dict:
     """List all Caddy modules currently loaded in the running server. Useful for checking whether optional modules (rate_limit, crowdsec, etc.) are available before trying to use them in routes."""
     try:
