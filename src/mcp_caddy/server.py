@@ -696,6 +696,23 @@ async def get_log_config() -> dict:
 
 
 @mcp.tool()
+async def update_log_config(config_json: str) -> dict:
+    """Replace the Caddy logging configuration. config_json: full logging config object. Example: {"logs": {"default": {"writer": {"output": "file", "filename": "/var/log/caddy/access.log"}, "encoder": {"format": "json"}}}}. Use get_log_config to fetch the current config first."""
+    if not config_json or not config_json.strip():
+        return {"error": "config_json must not be empty", "tool": "update_log_config"}
+    try:
+        log_cfg = json.loads(config_json)
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON: {e}", "tool": "update_log_config"}
+    try:
+        resp = await _request("PATCH", "/config/logging", json=log_cfg)
+        resp.raise_for_status()
+        return {"result": {"updated": True}}
+    except Exception as e:
+        return _err(e, "update_log_config")
+
+
+@mcp.tool()
 async def stop_caddy() -> dict:
     """Gracefully stop the Caddy server process. WARNING: this terminates the Caddy admin API — the server will be unreachable until restarted externally."""
     try:
