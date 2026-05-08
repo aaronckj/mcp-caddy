@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 
 import httpx
@@ -139,6 +140,8 @@ async def get_certificates() -> dict:
 @mcp.tool()
 async def adapt_config(caddyfile: str) -> dict:
     """Convert a Caddyfile snippet to JSON config using Caddy's built-in adapter."""
+    if not caddyfile or not caddyfile.strip():
+        return {"error": "caddyfile must not be empty", "tool": "adapt_config"}
     try:
         resp = await _request(
             "POST",
@@ -157,12 +160,11 @@ async def adapt_config(caddyfile: str) -> dict:
 async def reload(source: str) -> dict:
     """Reload Caddy config. source: raw JSON string (starts with '{') or path to a JSON config file."""
     try:
-        import json as _json
         if source.lstrip().startswith("{"):
-            config_data = _json.loads(source)
+            config_data = json.loads(source)
         else:
             with open(source) as f:
-                config_data = _json.load(f)
+                config_data = json.load(f)
 
         resp = await _request("POST", "/load", json=config_data)
         resp.raise_for_status()
