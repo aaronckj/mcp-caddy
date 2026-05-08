@@ -257,7 +257,8 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
         match_rule: dict = {"host": [host]}
         if path_prefix:
             p = path_prefix.strip().rstrip("/")
-            # If no wildcard, match both the exact path and all children
+            if not p.startswith("/"):
+                p = "/" + p
             if not p.endswith("*"):
                 match_rule["path"] = [p, p + "/*"]
             else:
@@ -1064,7 +1065,9 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
     upstream = upstream.strip()
     if err := _validate_upstream_dial(upstream):
         return {"error": err, "tool": "add_rewrite_route"}
-    prefix = path_prefix.rstrip("/")
+    prefix = path_prefix.strip().rstrip("/")
+    if not prefix.startswith("/"):
+        prefix = "/" + prefix
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -1740,6 +1743,8 @@ async def add_stub_response_route(host: str, body: str = "", status_code: int = 
         match_rule: dict = {"host": [host]}
         if path_prefix and path_prefix.strip():
             p = path_prefix.strip().rstrip("/")
+            if not p.startswith("/"):
+                p = "/" + p
             match_rule["path"] = [p, p + "/*"] if not p.endswith("*") else [p]
         handler: dict = {"handler": "static_response", "status_code": status_code}
         if body:
@@ -1929,6 +1934,8 @@ async def add_redirect_route(
         match: dict = {"host": [host]}
         if path_prefix.strip():
             prefix = path_prefix.strip().rstrip("/")
+            if not prefix.startswith("/"):
+                prefix = "/" + prefix
             match["path"] = [prefix + "/*", prefix]
         route = {
             "match": [match],
@@ -2140,7 +2147,10 @@ async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_p
             server_name = next(iter(resp.json() or {}), "srv0")
         match: dict = {"host": [host.strip()]}
         if path_prefix.strip():
-            match["path"] = [path_prefix.strip().rstrip("/") + "/*"]
+            _p = path_prefix.strip().rstrip("/")
+            if not _p.startswith("/"):
+                _p = "/" + _p
+            match["path"] = [_p + "/*"]
         route = {
             "match": [match],
             "handle": [{
@@ -2314,6 +2324,8 @@ async def add_sse_route(
         match: dict = {"host": [host.strip()]}
         if path.strip():
             p = path.strip().rstrip("/")
+            if not p.startswith("/"):
+                p = "/" + p
             match["path"] = [p + "/*", p] if not p.endswith("*") else [p]
         route = {
             "match": [match],
