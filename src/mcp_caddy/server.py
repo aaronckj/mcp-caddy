@@ -2425,6 +2425,42 @@ async def disable_server_access_log(server_name: str) -> dict:
         return _err(e, "disable_server_access_log")
 
 
+@mcp.tool()
+async def add_cookie_match_route(
+    host: str,
+    cookie_name: str,
+    cookie_value: str,
+    upstream: str,
+    server_name: str = "",
+) -> dict:
+    """Add a route that matches requests containing a specific cookie value, proxying to a different upstream. Useful for sticky sessions, A/B testing, feature flags, or canary deployments. cookie_name: cookie key to match. cookie_value: exact value to match. Non-matching requests fall through to other routes. Inserted at index 0 for priority."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_cookie_match_route"}
+    if not cookie_name or not cookie_name.strip():
+        return {"error": "cookie_name must not be empty", "tool": "add_cookie_match_route"}
+    if not cookie_value or not cookie_value.strip():
+        return {"error": "cookie_value must not be empty", "tool": "add_cookie_match_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_cookie_match_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()], "header_regexp": {"Cookie": {f"(?:^|;\\s*){re.escape(cookie_name.strip())}={re.escape(cookie_value.strip())}(?:;|$)": {}}}}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.insert(0, route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "cookie": f"{cookie_name}={cookie_value}", "upstream": upstream, "route_index": 0}}
+    except Exception as e:
+        return _err(e, "add_cookie_match_route")
+
+
 def main() -> None:
     mcp.run()
 
