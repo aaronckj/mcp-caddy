@@ -901,6 +901,12 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
         return {"error": "username must not be empty", "tool": "add_basicauth_route"}
     if not hashed_password or not hashed_password.strip():
         return {"error": "hashed_password must not be empty — provide a bcrypt hash", "tool": "add_basicauth_route"}
+    hashed_password = hashed_password.strip()
+    if not re.match(r'^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$', hashed_password):
+        return {"error": "hashed_password must be a valid bcrypt hash (e.g. from: caddy hash-password --plaintext 'pw')", "tool": "add_basicauth_route"}
+    if upstream and upstream.strip():
+        if err := _validate_upstream_dial(upstream.strip()):
+            return {"error": err, "tool": "add_basicauth_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -971,6 +977,8 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_rewrite_route"}
     upstream = upstream.strip()
+    if err := _validate_upstream_dial(upstream):
+        return {"error": err, "tool": "add_rewrite_route"}
     prefix = path_prefix.rstrip("/")
     try:
         if not server_name:
@@ -1414,6 +1422,8 @@ async def add_websocket_route(host: str, upstream: str, server_name: str = "", p
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_websocket_route"}
     upstream = upstream.strip()
+    if err := _validate_upstream_dial(upstream):
+        return {"error": err, "tool": "add_websocket_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -1959,6 +1969,9 @@ async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_p
         return {"error": "host must not be empty", "tool": "add_grpc_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_grpc_route"}
+    upstream = upstream.strip()
+    if err := _validate_upstream_dial(upstream):
+        return {"error": err, "tool": "add_grpc_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2102,8 +2115,8 @@ async def set_acme_email(email: str) -> dict:
     if not email or not email.strip():
         return {"error": "email must not be empty", "tool": "set_acme_email"}
     email = email.strip()
-    if "@" not in email:
-        return {"error": "email must be a valid email address", "tool": "set_acme_email"}
+    if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+        return {"error": f"'{email}' is not a valid email address (expected user@domain.tld)", "tool": "set_acme_email"}
     try:
         resp = await _request("PUT", "/config/apps/tls/automation/email", json=email)
         resp.raise_for_status()
@@ -2582,6 +2595,9 @@ async def add_circuit_breaker_route(
         return {"error": "host must not be empty", "tool": "add_circuit_breaker_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_circuit_breaker_route"}
+    upstream = upstream.strip()
+    if err := _validate_upstream_dial(upstream):
+        return {"error": err, "tool": "add_circuit_breaker_route"}
     if max_fails < 1:
         return {"error": "max_fails must be at least 1", "tool": "add_circuit_breaker_route"}
     try:
