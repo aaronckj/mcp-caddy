@@ -97,6 +97,7 @@ async def get_server(server_name: str) -> dict:
     """Get full configuration of a Caddy HTTP server block including listen addresses, routes, and TLS settings."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "get_server"}
+    server_name = server_name.strip()
     try:
         resp = await _request("GET", f"/config/apps/http/servers/{server_name.strip()}")
         resp.raise_for_status()
@@ -110,6 +111,7 @@ async def delete_server(server_name: str) -> dict:
     """Delete a Caddy HTTP server block entirely, removing all its routes and configuration. This is irreversible without a config backup."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "delete_server"}
+    server_name = server_name.strip()
     try:
         resp = await _request("DELETE", f"/config/apps/http/servers/{server_name.strip()}")
         resp.raise_for_status()
@@ -172,27 +174,14 @@ async def list_routes() -> dict:
 
 
 @mcp.tool()
-async def get_route(server_name: str, route_index: int) -> dict:
-    """Get the full configuration of a specific route by index. Use list_routes to find server_name and index."""
-    if not server_name or not server_name.strip():
-        return {"error": "server_name must not be empty", "tool": "get_route"}
-    if route_index < 0:
-        return {"error": "route_index must be >= 0", "tool": "get_route"}
-    try:
-        resp = await _request("GET", f"/config/apps/http/servers/{server_name.strip()}/routes/{route_index}")
-        resp.raise_for_status()
-        return {"result": resp.json()}
-    except Exception as e:
-        return _err(e, "get_route")
-
-
-@mcp.tool()
 async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "", path_prefix: str = "") -> dict:
     """Add a reverse proxy route to Caddy. host: domain (e.g. 'app.example.com'). upstream: backend dial address (e.g. 'localhost:3000'). path_prefix: optional URL path prefix to match in addition to host (e.g. '/api/*'). server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_reverse_proxy_route"}
+    host = host.strip()
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_reverse_proxy_route"}
+    upstream = upstream.strip()
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -230,8 +219,10 @@ async def add_path_route(path: str, upstream: str, server_name: str = "") -> dic
     """Add a path-based reverse proxy route. All requests matching the URL path prefix are proxied to upstream regardless of hostname. path: e.g. '/api/*' or '/v2/*'. upstream: backend address (e.g., 'localhost:8080'). server_name: auto-detects first server if empty."""
     if not path or not path.strip():
         return {"error": "path must not be empty", "tool": "add_path_route"}
+    path = path.strip()
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_path_route"}
+    upstream = upstream.strip()
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -258,8 +249,10 @@ async def add_static_file_server(path: str, root: str, server_name: str = "") ->
     """Add a static file server route to Caddy. path: URL path to match (e.g., '/files/*'). root: filesystem directory to serve. server_name: auto-detects first server if empty."""
     if not path or not path.strip():
         return {"error": "path must not be empty", "tool": "add_static_file_server"}
+    path = path.strip()
     if not root or not root.strip():
         return {"error": "root must not be empty", "tool": "add_static_file_server"}
+    root = root.strip()
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -286,8 +279,10 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
     """Add an HTTP redirect route. from_host: domain to redirect (e.g. 'old.example.com'). to_url: destination URL. status_code: 301 (permanent), 302 (temporary), 307, or 308."""
     if not from_host or not from_host.strip():
         return {"error": "from_host must not be empty", "tool": "add_redirect"}
+    from_host = from_host.strip()
     if not to_url or not to_url.strip():
         return {"error": "to_url must not be empty", "tool": "add_redirect"}
+    to_url = to_url.strip()
     if status_code not in {301, 302, 307, 308}:
         return {"error": "status_code must be 301, 302, 307, or 308", "tool": "add_redirect"}
     try:
@@ -320,10 +315,13 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
     """Add a route that injects a response header for all requests to a given host. Useful for HSTS, CORS, X-Frame-Options, X-Content-Type-Options, etc. host: domain to match. server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_header_route"}
+    host = host.strip()
     if not header_name or not header_name.strip():
         return {"error": "header_name must not be empty", "tool": "add_header_route"}
+    header_name = header_name.strip()
     if not header_value or not header_value.strip():
         return {"error": "header_value must not be empty", "tool": "add_header_route"}
+    header_value = header_value.strip()
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -353,6 +351,7 @@ async def delete_route(server_name: str, route_index: int) -> dict:
     """Delete a route by index from an HTTP server's route list. Use list_routes to find the index. Changes take effect immediately."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "delete_route"}
+    server_name = server_name.strip()
     if route_index < 0:
         return {"error": "route_index must be >= 0", "tool": "delete_route"}
     try:
@@ -419,6 +418,7 @@ async def adapt_config(caddyfile: str) -> dict:
     """Convert a Caddyfile snippet to JSON config using Caddy's built-in adapter."""
     if not caddyfile or not caddyfile.strip():
         return {"error": "caddyfile must not be empty", "tool": "adapt_config"}
+    caddyfile = caddyfile.strip()
     try:
         resp = await _request(
             "POST",
@@ -497,8 +497,10 @@ async def create_server(name: str, listen_addresses: str) -> dict:
     """Create a new Caddy HTTP server block. name: server identifier used in other tools (e.g., 'srv1'). listen_addresses: comma-separated bind addresses (e.g., ':80' or ':80,:443' or '0.0.0.0:8080'). The new server starts with no routes — use add_reverse_proxy_route or similar to add routes."""
     if not name or not name.strip():
         return {"error": "name must not be empty", "tool": "create_server"}
+    name = name.strip()
     if not listen_addresses or not listen_addresses.strip():
         return {"error": "listen_addresses must not be empty", "tool": "create_server"}
+    listen_addresses = listen_addresses.strip()
     listen = [a.strip() for a in listen_addresses.split(",") if a.strip()]
     try:
         resp = await _request(
@@ -517,6 +519,7 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
     """Add a TLS automation policy for one or more domains. subjects: comma-separated domain names (e.g., 'example.com,*.example.com'). ca_url: ACME CA directory URL (defaults to Let's Encrypt if empty). email: ACME account email. Appends to existing TLS policies."""
     if not subjects or not subjects.strip():
         return {"error": "subjects must not be empty", "tool": "add_tls_policy"}
+    subjects = subjects.strip()
     subject_list = [s.strip() for s in subjects.split(",") if s.strip()]
     if not subject_list:
         return {"error": "subjects must contain at least one domain", "tool": "add_tls_policy"}
@@ -595,10 +598,12 @@ async def update_route(server_name: str, route_index: int, config_json: str) -> 
     """Replace a route in-place by index. config_json: full route JSON object. Use get_route to retrieve the current config, modify it, then pass it here. Changes take effect immediately."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "update_route"}
+    server_name = server_name.strip()
     if route_index < 0:
         return {"error": "route_index must be >= 0", "tool": "update_route"}
     if not config_json or not config_json.strip():
         return {"error": "config_json must not be empty", "tool": "update_route"}
+    config_json = config_json.strip()
     try:
         route_config = json.loads(config_json)
     except json.JSONDecodeError as e:
@@ -631,8 +636,10 @@ async def update_listen_addresses(server_name: str, listen_addresses: str) -> di
     """Update the listen addresses for an existing Caddy HTTP server block without touching routes. listen_addresses: comma-separated bind addresses (e.g., ':80,:443'). Changes take effect immediately."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "update_listen_addresses"}
+    server_name = server_name.strip()
     if not listen_addresses or not listen_addresses.strip():
         return {"error": "listen_addresses must not be empty", "tool": "update_listen_addresses"}
+    listen_addresses = listen_addresses.strip()
     listen = [a.strip() for a in listen_addresses.split(",") if a.strip()]
     try:
         resp = await _request(
@@ -651,6 +658,7 @@ async def get_pki_ca(ca_name: str) -> dict:
     """Get details for a Caddy PKI certificate authority: root cert, intermediate cert PEM, signing policy, and lifetime. Use list_pki_cas to find CA names. Default local CA is named 'local'."""
     if not ca_name or not ca_name.strip():
         return {"error": "ca_name must not be empty", "tool": "get_pki_ca"}
+    ca_name = ca_name.strip()
     try:
         resp = await _request("GET", f"/pki/ca/{ca_name.strip()}")
         resp.raise_for_status()
@@ -665,10 +673,12 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
     """Update the backend dial address for a reverse proxy route. Fetches the route, replaces all upstream dial addresses, and PATCHes in-place. Use list_routes to find server_name and route_index. new_upstream: e.g. 'localhost:8080' or '10.0.0.5:3000'."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "update_upstream"}
+    server_name = server_name.strip()
     if route_index < 0:
         return {"error": "route_index must be >= 0", "tool": "update_upstream"}
     if not new_upstream or not new_upstream.strip():
         return {"error": "new_upstream must not be empty", "tool": "update_upstream"}
+    new_upstream = new_upstream.strip()
     try:
         sn = server_name.strip()
         resp = await _request("GET", f"/config/apps/http/servers/{sn}/routes/{route_index}")
@@ -723,6 +733,7 @@ async def update_log_config(config_json: str) -> dict:
     """Replace the Caddy logging configuration. config_json: full logging config object. Example: {"logs": {"default": {"writer": {"output": "file", "filename": "/var/log/caddy/access.log"}, "encoder": {"format": "json"}}}}. Use get_log_config to fetch the current config first."""
     if not config_json or not config_json.strip():
         return {"error": "config_json must not be empty", "tool": "update_log_config"}
+    config_json = config_json.strip()
     try:
         log_cfg = json.loads(config_json)
     except json.JSONDecodeError as e:
@@ -740,12 +751,16 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
     """Add a reverse proxy route protected by HTTP basic authentication. hashed_password: bcrypt hash of the password (generate with: caddy hash-password --plaintext 'yourpassword'). upstream: backend address. server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_basicauth_route"}
+    host = host.strip()
     if not username or not username.strip():
         return {"error": "username must not be empty", "tool": "add_basicauth_route"}
+    username = username.strip()
     if not hashed_password or not hashed_password.strip():
         return {"error": "hashed_password must not be empty", "tool": "add_basicauth_route"}
+    hashed_password = hashed_password.strip()
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_basicauth_route"}
+    upstream = upstream.strip()
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -808,10 +823,13 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
     """Add a reverse proxy route that strips a path prefix before forwarding to upstream. Requests to host/path_prefix/foo are forwarded as /foo to upstream. host: domain to match. path_prefix: URL prefix to strip and match (e.g. '/api/v1'). upstream: backend address. server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_rewrite_route"}
+    host = host.strip()
     if not path_prefix or not path_prefix.strip():
         return {"error": "path_prefix must not be empty", "tool": "add_rewrite_route"}
+    path_prefix = path_prefix.strip()
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_rewrite_route"}
+    upstream = upstream.strip()
     prefix = path_prefix.strip().rstrip("/")
     try:
         if not server_name:
@@ -841,6 +859,7 @@ async def add_compress_route(host: str, server_name: str = "", algorithms: str =
     """Add a compression (encode) route for a host to enable gzip/zstd response compression. Caddy automatically negotiates the best algorithm based on Accept-Encoding. algorithms: comma-separated list of encoders — 'zstd' (preferred), 'gzip', or both (default). server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_compress_route"}
+    host = host.strip()
     algo_list = [a.strip().lower() for a in algorithms.split(",") if a.strip()]
     valid_algos = {"gzip", "zstd"}
     invalid = [a for a in algo_list if a not in valid_algos]
@@ -874,10 +893,13 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
     """Add a route that injects a request header for all requests to a given host before forwarding to upstream. Useful for adding X-API-Key, Authorization, X-Custom-Header, or any other header the backend requires. host: domain to match. server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_request_header_route"}
+    host = host.strip()
     if not header_name or not header_name.strip():
         return {"error": "header_name must not be empty", "tool": "add_request_header_route"}
+    header_name = header_name.strip()
     if not header_value or not header_value.strip():
         return {"error": "header_value must not be empty", "tool": "add_request_header_route"}
+    header_value = header_value.strip()
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -913,6 +935,7 @@ async def add_cors_route(
     """Add a CORS (Cross-Origin Resource Sharing) route for a host. Sets Access-Control-Allow-Origin, Access-Control-Allow-Methods, Access-Control-Allow-Headers, and Access-Control-Max-Age response headers. host: domain to match. allow_origins: comma-separated origins or '*'. allow_methods: comma-separated HTTP methods. allow_headers: comma-separated header names. max_age: preflight cache seconds. server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_cors_route"}
+    host = host.strip()
     origins = allow_origins.strip() or "*"
     methods = allow_methods.strip() or "GET,POST,PUT,DELETE,OPTIONS"
     headers = allow_headers.strip() or "Content-Type,Authorization"
@@ -1003,10 +1026,13 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
     """Add a reverse proxy route that only allows requests from specific IP addresses or CIDR ranges. Requests from other IPs receive a 403. host: domain to match. upstream: backend address. allowed_ips: comma-separated IPs or CIDRs (e.g., '192.168.1.0/24,10.0.0.5'). server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_ip_filter_route"}
+    host = host.strip()
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_ip_filter_route"}
+    upstream = upstream.strip()
     if not allowed_ips or not allowed_ips.strip():
         return {"error": "allowed_ips must not be empty", "tool": "add_ip_filter_route"}
+    allowed_ips = allowed_ips.strip()
     ip_list = [ip.strip() for ip in allowed_ips.split(",") if ip.strip()]
     if not ip_list:
         return {"error": "allowed_ips must contain at least one IP or CIDR", "tool": "add_ip_filter_route"}
@@ -1086,6 +1112,7 @@ async def get_route(server_name: str, route_index: int) -> dict:
     """Get a single route by server name and index. Use list_routes to find indices. Useful for inspecting a route before updating or deleting it."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "get_route"}
+    server_name = server_name.strip()
     if route_index < 0:
         return {"error": "route_index must be >= 0", "tool": "get_route"}
     try:
