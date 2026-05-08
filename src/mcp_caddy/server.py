@@ -1738,6 +1738,30 @@ async def add_redirect_route(
         return _err(e, "add_redirect_route")
 
 
+@mcp.tool()
+async def duplicate_route(server_name: str, source_index: int, insert_index: int = -1) -> dict:
+    """Copy an existing route to a new position in the route list. source_index: zero-based index of the route to copy. insert_index: position to insert the copy (-1 = append at end). Useful for creating variations of an existing route."""
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        resp.raise_for_status()
+        routes = resp.json() or []
+        if source_index < 0 or source_index >= len(routes):
+            return {"error": f"source_index {source_index} out of range (0–{len(routes) - 1})", "tool": "duplicate_route"}
+        import copy
+        duplicate = copy.deepcopy(routes[source_index])
+        if insert_index < 0 or insert_index >= len(routes):
+            routes.append(duplicate)
+            new_index = len(routes) - 1
+        else:
+            routes.insert(insert_index, duplicate)
+            new_index = insert_index
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "copied_from": source_index, "inserted_at": new_index, "total_routes": len(routes)}}
+    except Exception as e:
+        return _err(e, "duplicate_route")
+
+
 def main() -> None:
     mcp.run()
 
