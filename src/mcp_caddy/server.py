@@ -2380,6 +2380,37 @@ async def add_request_body_limit(
         return _err(e, "add_request_body_limit")
 
 
+@mcp.tool()
+async def enable_server_access_log(
+    server_name: str,
+    output_file: str = "",
+    format: str = "json",
+) -> dict:
+    """Enable HTTP access logging for a Caddy server, writing one log line per request. output_file: path to write logs (e.g. '/var/log/caddy/access.log'); if empty, logs go to stderr. format: 'json' (structured, default) or 'console' (human-readable). Use list_servers to find server names."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "enable_server_access_log"}
+    server_name = server_name.strip()
+    valid_formats = {"json", "console"}
+    if format not in valid_formats:
+        return {"error": f"format must be one of: {', '.join(sorted(valid_formats))}", "tool": "enable_server_access_log"}
+    try:
+        encoder: dict = {"format": format}
+        if output_file and output_file.strip():
+            output: dict = {"output": "file", "filename": output_file.strip(), "roll_size_mb": 100, "roll_keep": 10}
+        else:
+            output = {"output": "stderr"}
+        logs_config = {
+            "default_logger_name": "access",
+            "logger_names": {},
+            "access": {"writer": output, "encoder": encoder},
+        }
+        resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/logs", json=logs_config)
+        resp.raise_for_status()
+        return {"result": {"server": server_name, "format": format, "output": output_file or "stderr", "enabled": True}}
+    except Exception as e:
+        return _err(e, "enable_server_access_log")
+
+
 def main() -> None:
     mcp.run()
 
