@@ -681,6 +681,21 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
 
 
 @mcp.tool()
+async def get_log_config() -> dict:
+    """Fetch the current Caddy logging configuration. Returns configured log writers, encoders, sampling settings, and which loggers are enabled. Returns an empty object if logging is not explicitly configured (Caddy uses stderr by default)."""
+    try:
+        resp = await _request("GET", "/config/logging")
+        resp.raise_for_status()
+        return {"result": resp.json() or {}}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {"result": {}, "note": "No logging config — Caddy uses stderr by default"}
+        return _err(e, "get_log_config")
+    except Exception as e:
+        return _err(e, "get_log_config")
+
+
+@mcp.tool()
 async def stop_caddy() -> dict:
     """Gracefully stop the Caddy server process. WARNING: this terminates the Caddy admin API — the server will be unreachable until restarted externally."""
     try:
