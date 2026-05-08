@@ -950,6 +950,45 @@ async def add_cors_route(
         return _err(e, "add_cors_route")
 
 
+@mcp.tool()
+async def delete_route_by_host(host: str, server_name: str = "") -> dict:
+    """Delete all routes matching a specific hostname from the Caddy config. Useful when you know the host but not the route index. Use list_routes first to preview. Returns the count of deleted routes. server_name: auto-detects all servers if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "delete_route_by_host"}
+    host = host.strip()
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json() or {}
+        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        if not servers:
+            return {"error": "No HTTP servers configured in Caddy", "tool": "delete_route_by_host"}
+        if server_name:
+            if server_name not in servers:
+                return {"error": f"Server '{server_name}' not found", "tool": "delete_route_by_host"}
+            target_servers = {server_name: servers[server_name]}
+        else:
+            target_servers = servers
+        total_deleted = 0
+        for srv_name, server in target_servers.items():
+            routes = server.get("routes", [])
+            kept = []
+            for route in routes:
+                route_hosts = []
+                for match in route.get("match", []):
+                    route_hosts.extend(match.get("host", []))
+                if host in route_hosts:
+                    total_deleted += 1
+                else:
+                    kept.append(route)
+            if total_deleted > 0:
+                upd = await _request("PUT", f"/config/apps/http/servers/{srv_name}/routes", json=kept)
+                upd.raise_for_status()
+        return {"result": {"host": host, "deleted": total_deleted}}
+    except Exception as e:
+        return _err(e, "delete_route_by_host")
+
+
 def main() -> None:
     mcp.run()
 
