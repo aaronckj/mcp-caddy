@@ -1622,6 +1622,66 @@ async def add_global_headers(headers: str, server_name: str = "") -> dict:
 
 
 @mcp.tool()
+async def move_route(server_name: str, from_index: int, to_index: int) -> dict:
+    """Move a route to a different position in a Caddy HTTP server's route list. Route order matters — Caddy evaluates routes in order and the first matching route wins. Use list_routes to find current indices. Changes take effect immediately. server_name: server block name from list_servers."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "move_route"}
+    server_name = server_name.strip()
+    if from_index < 0:
+        return {"error": "from_index must be >= 0", "tool": "move_route"}
+    if to_index < 0:
+        return {"error": "to_index must be >= 0", "tool": "move_route"}
+    if from_index == to_index:
+        return {"result": {"moved": False, "note": "from_index and to_index are the same"}}
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        resp.raise_for_status()
+        routes = resp.json() or []
+        n = len(routes)
+        if from_index >= n:
+            return {"error": f"from_index {from_index} out of range (server has {n} routes)", "tool": "move_route"}
+        if to_index >= n:
+            return {"error": f"to_index {to_index} out of range (server has {n} routes)", "tool": "move_route"}
+        route = routes.pop(from_index)
+        routes.insert(to_index, route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"moved": True, "from_index": from_index, "to_index": to_index, "server": server_name}}
+    except Exception as e:
+        return _err(e, "move_route")
+
+
+@mcp.tool()
+async def add_trusted_proxies(ranges: str = "private_ranges", server_name: str = "") -> dict:
+    """Configure trusted proxy IP ranges for a Caddy HTTP server. When Caddy sits behind a load balancer, CDN, or reverse proxy, this tells Caddy which upstream IPs can be trusted to provide accurate X-Forwarded-For headers. ranges: 'private_ranges' to trust all RFC1918 private networks (recommended for internal deployments), or comma-separated CIDR blocks (e.g. '10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'). server_name: auto-detects first server if empty."""
+    ranges = (ranges or "private_ranges").strip()
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_trusted_proxies"}
+            server_name = next(iter(servers))
+        server_name = server_name.strip()
+        if ranges == "private_ranges":
+            trusted: dict = {"source": "private_ranges"}
+        else:
+            cidr_list = [r.strip() for r in ranges.split(",") if r.strip()]
+            trusted = {"source": "static", "ranges": cidr_list}
+        patch_resp = await _request("PATCH", f"/config/apps/http/servers/{server_name}/trusted_proxies", json=trusted)
+        if patch_resp.status_code == 404:
+            put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/trusted_proxies", json=trusted)
+            put_resp.raise_for_status()
+        else:
+            patch_resp.raise_for_status()
+        return {"result": {"configured": True, "server": server_name, "trusted_proxies": trusted}}
+    except Exception as e:
+        return _err(e, "add_trusted_proxies")
+
+
+@mcp.tool()
 async def list_virtual_hosts() -> dict:
     """List all virtual hosts (domain names) configured across all Caddy HTTP servers. Scans every route in every server block and extracts unique hostname values from host matchers. Useful for a quick overview of what domains Caddy is serving and which server block each belongs to."""
     try:
