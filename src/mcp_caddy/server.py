@@ -232,6 +232,8 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
     upstream = upstream.strip()
     if err := _validate_upstream_dial(upstream):
         return {"error": err, "tool": "add_reverse_proxy_route"}
+    if health_interval and health_interval.strip() and (not health_path or not health_path.strip()):
+        return {"error": "health_interval requires health_path to be set", "tool": "add_reverse_proxy_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -1843,7 +1845,7 @@ async def add_redirect_route(
             "handle": [{"handler": "static_response", "status_code": status_code, "headers": {"Location": [redirect_to]}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
-        routes = get_resp.json() or [] if get_resp.status_code == 200 else []
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
