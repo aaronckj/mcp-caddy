@@ -1875,6 +1875,39 @@ async def get_admin_config() -> dict:
         return _err(e, "get_admin_config")
 
 
+@mcp.tool()
+async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_prefix: str = "") -> dict:
+    """Add a gRPC reverse proxy route. Caddy proxies gRPC (HTTP/2) traffic using h2c transport. upstream: gRPC server address (e.g. 'localhost:50051'). path_prefix: optional path to restrict which gRPC services are proxied (e.g. '/mypackage.MyService/')."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_grpc_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_grpc_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        match: dict = {"host": [host.strip()]}
+        if path_prefix.strip():
+            match["path"] = [path_prefix.strip().rstrip("/") + "/*"]
+        route = {
+            "match": [match],
+            "handle": [{
+                "handler": "reverse_proxy",
+                "transport": {"protocol": "http", "versions": ["h2c", "2"]},
+                "upstreams": [{"dial": upstream.strip()}],
+            }],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "upstream": upstream, "transport": "h2c/HTTP2", "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_grpc_route")
+
+
 def main() -> None:
     mcp.run()
 
