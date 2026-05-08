@@ -648,6 +648,10 @@ async def delete_tls_policy(policy_index: int) -> dict:
         resp = await _request("DELETE", f"/config/apps/tls/automation/policies/{policy_index}")
         resp.raise_for_status()
         return {"result": {"deleted": True, "index": policy_index}}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {"error": f"TLS policy at index {policy_index} not found", "tool": "delete_tls_policy"}
+        return _err(e, "delete_tls_policy")
     except Exception as e:
         return _err(e, "delete_tls_policy")
 
@@ -677,6 +681,48 @@ async def update_route(server_name: str, route_index: int, config_json: str) -> 
         return {"result": {"updated": True, "server_name": server_name, "route_index": route_index}}
     except Exception as e:
         return _err(e, "update_route")
+
+
+@mcp.tool()
+async def add_https_redirect(host: str, http_server_name: str = "") -> dict:
+    """Add a permanent HTTP-to-HTTPS redirect for a host. Creates a 301 route on the :80 listener that redirects all requests to https://. Auto-detects a server listening on :80, or creates one named 'http_redirect'. This is the standard Caddy pattern for forcing HTTPS. http_server_name: override auto-detected :80 server name."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_https_redirect"}
+    host = host.strip()
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json() or {}
+        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+
+        if http_server_name:
+            if http_server_name.strip() not in servers:
+                return {"error": f"Server '{http_server_name}' not found. Use list_servers to see available servers.", "tool": "add_https_redirect"}
+            target_server = http_server_name.strip()
+        else:
+            target_server = None
+            for name, srv in servers.items():
+                if any(addr in (":80", ":http", "0.0.0.0:80") for addr in srv.get("listen", [])):
+                    target_server = name
+                    break
+            if not target_server:
+                create = await _request("PUT", "/config/apps/http/servers/http_redirect", json={"listen": [":80"], "routes": []})
+                create.raise_for_status()
+                target_server = "http_redirect"
+
+        route = {
+            "match": [{"host": [host]}],
+            "handle": [{
+                "handler": "static_response",
+                "status_code": 301,
+                "headers": {"Location": ["https://{http.request.host}{http.request.uri}"]},
+            }],
+        }
+        add_resp = await _request("POST", f"/config/apps/http/servers/{target_server}/routes", json=route)
+        add_resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "server": target_server}}
+    except Exception as e:
+        return _err(e, "add_https_redirect")
 
 
 @mcp.tool()
