@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 
@@ -1103,9 +1104,8 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
     if not ip_list:
         return {"error": "allowed_ips must contain at least one IP or CIDR", "tool": "add_ip_filter_route"}
     try:
-        import ipaddress as _ip
         for ip in ip_list:
-            _ip.ip_network(ip, strict=False)
+            ipaddress.ip_network(ip, strict=False)
     except ValueError as e:
         return {"error": f"Invalid IP/CIDR in allowed_ips: {e}", "tool": "add_ip_filter_route"}
     try:
