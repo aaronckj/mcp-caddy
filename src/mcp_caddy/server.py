@@ -2622,8 +2622,8 @@ async def add_retry_route(
             "handle": [{
                 "handler": "reverse_proxy",
                 "upstreams": [{"dial": upstream}],
+                "retries": retries,
                 "load_balancing": {
-                    "retries": retries,
                     "retry_match": [{"status_code": [502, 503, 504]}],
                 },
                 "health_checks": {
@@ -3002,7 +3002,7 @@ async def add_not_found_route(
             server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host.strip()]}],
-            "handle": [{"handler": "static_response", "status_code": 404, "headers": {"Content-Type": [content_type]}, "body": body}],
+            "handle": [{"handler": "static_response", "status_code": "404", "headers": {"Content-Type": [content_type]}, "body": body}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         if get_resp.status_code == 404:
@@ -3124,7 +3124,7 @@ async def add_active_health_check_route(
                 "upstreams": [{"dial": upstream}],
                 "health_checks": {
                     "active": {
-                        "path": health_path.strip() if health_path.strip().startswith("/") else "/" + health_path.strip(),
+                        "uri": health_path.strip() if health_path.strip().startswith("/") else "/" + health_path.strip(),
                         "interval": interval,
                         "timeout": timeout,
                         "expect_status": expect_status,
