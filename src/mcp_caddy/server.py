@@ -359,18 +359,22 @@ async def delete_route(server_name: str, route_index: int) -> dict:
 
 @mcp.tool()
 async def list_upstreams() -> dict:
-    """List all reverse proxy upstreams with their health status and request counts."""
+    """List all reverse proxy upstreams with their health status and request counts. Returns empty list if no upstreams are configured."""
     try:
         resp = await _request("GET", "/reverse_proxy/upstreams")
         resp.raise_for_status()
         return {"result": resp.json()}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {"result": []}
+        return _err(e, "list_upstreams")
     except Exception as e:
         return _err(e, "list_upstreams")
 
 
 @mcp.tool()
 async def get_certificates() -> dict:
-    """List TLS certificate automation policies: subjects, ACME issuers, and CAs."""
+    """List TLS automation policies from Caddy config: domains, ACME issuers, and CAs. Returns policies, not live certificate objects — use list_loaded_certs to see the actual certificate cache."""
     try:
         resp = await _request("GET", "/config/")
         resp.raise_for_status()
@@ -766,6 +770,54 @@ async def stop_caddy() -> dict:
         return {"result": {"stopped": True}}
     except Exception as e:
         return _err(e, "stop_caddy")
+
+
+@mcp.tool()
+async def list_loaded_certs() -> dict:
+    """List all TLS certificates currently loaded in Caddy's live certificate cache. Returns subject, issuer, expiry, and SANs for each certificate. Different from get_certificates which shows automation policies."""
+    try:
+        resp = await _request("GET", "/certificates")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {"result": [], "note": "No certificates loaded in cache"}
+        return _err(e, "list_loaded_certs")
+    except Exception as e:
+        return _err(e, "list_loaded_certs")
+
+
+@mcp.tool()
+async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_name: str = "") -> dict:
+    """Add a reverse proxy route that strips a path prefix before forwarding to upstream. Requests to host/path_prefix/foo are forwarded as /foo to upstream. host: domain to match. path_prefix: URL prefix to strip and match (e.g. '/api/v1'). upstream: backend address. server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_rewrite_route"}
+    if not path_prefix or not path_prefix.strip():
+        return {"error": "path_prefix must not be empty", "tool": "add_rewrite_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_rewrite_route"}
+    prefix = path_prefix.strip().rstrip("/")
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_rewrite_route"}
+            server_name = next(iter(servers))
+        route = {
+            "match": [{"host": [host.strip()], "path": [prefix + "/*"]}],
+            "handle": [
+                {"handler": "rewrite", "strip_path_prefix": prefix},
+                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]},
+            ],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host.strip(), "path_prefix": prefix, "upstream": upstream.strip(), "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_rewrite_route")
 
 
 def main() -> None:
