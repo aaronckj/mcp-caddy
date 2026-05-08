@@ -1170,9 +1170,10 @@ async def add_cors_route(
     allow_methods: str = "GET,POST,PUT,DELETE,OPTIONS",
     allow_headers: str = "Content-Type,Authorization",
     max_age: int = 3600,
+    allow_credentials: bool = False,
     server_name: str = "",
 ) -> dict:
-    """Add a CORS route for a host. If upstream is provided, creates a complete CORS proxy route: OPTIONS preflight returns 200 with CORS headers, all other methods are proxied to upstream with CORS headers on the response. If upstream is omitted, adds a headers-only overlay (useful for static file servers already configured separately). host: domain to match. upstream: backend address (e.g. 'localhost:3000'). allow_origins: comma-separated origins or '*'. allow_methods: comma-separated HTTP methods. allow_headers: comma-separated header names. max_age: preflight cache seconds."""
+    """Add a CORS route for a host. If upstream is provided, creates a complete CORS proxy route: OPTIONS preflight returns 200 with CORS headers, all other methods are proxied to upstream with CORS headers on the response. If upstream is omitted, adds a headers-only overlay (useful for static file servers already configured separately). host: domain to match. upstream: backend address (e.g. 'localhost:3000'). allow_origins: comma-separated origins or '*'. allow_methods: comma-separated HTTP methods. allow_headers: comma-separated header names. max_age: preflight cache seconds. allow_credentials: send Access-Control-Allow-Credentials: true (requires a specific origin, cannot be used with allow_origins='*')."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_cors_route"}
     host = host.strip()
@@ -1182,6 +1183,11 @@ async def add_cors_route(
     if origins != "*" and "," in origins:
         return {
             "error": "allow_origins must be '*' or a single origin URL. The CORS spec does not allow multiple origins in one Access-Control-Allow-Origin header. Call add_cors_route once per origin, or use '*'.",
+            "tool": "add_cors_route",
+        }
+    if allow_credentials and origins == "*":
+        return {
+            "error": "allow_credentials=True requires a specific origin — '*' is not permitted by the CORS spec when credentials are included. Set allow_origins to the exact origin (e.g. 'https://app.example.com').",
             "tool": "add_cors_route",
         }
     methods = allow_methods.strip() or "GET,POST,PUT,DELETE,OPTIONS"
@@ -1198,6 +1204,8 @@ async def add_cors_route(
         "Access-Control-Allow-Headers": [hdrs],
         "Access-Control-Max-Age": [str(max_age)],
     }
+    if allow_credentials:
+        cors_headers["Access-Control-Allow-Credentials"] = ["true"]
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -1253,6 +1261,7 @@ async def add_cors_route(
                 "allow_methods": methods,
                 "allow_headers": hdrs,
                 "max_age": max_age,
+                "allow_credentials": allow_credentials,
                 "server": server_name,
             }
         }
@@ -1794,6 +1803,48 @@ async def add_global_headers(headers: str, server_name: str = "") -> dict:
         return {"result": {"added": True, "headers": parsed, "server": server_name, "scope": "global"}}
     except Exception as e:
         err = _err(e, "add_global_headers"); err["server_name"] = server_name; return err
+
+
+@mcp.tool()
+async def delete_global_headers(server_name: str = "") -> dict:
+    """Delete all global (no host matcher) header-only routes added by add_global_headers. These routes cannot be removed by delete_route_by_host because they have no match block. Removes every route in the server that has no match key and uses only a 'headers' handler. Returns the count of deleted routes. server_name: auto-detects first server if empty."""
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json() or {}
+        servers = config.get("apps", {}).get("http", {}).get("servers", {})
+        if not servers:
+            return {"error": "No HTTP servers configured in Caddy", "tool": "delete_global_headers"}
+        if server_name:
+            server_name = server_name.strip()
+            if server_name not in servers:
+                return {"error": f"Server '{server_name}' not found", "tool": "delete_global_headers"}
+            target_servers = {server_name: servers[server_name]}
+        else:
+            target_servers = servers
+        total_deleted = 0
+        detail = []
+        for sname, sdata in target_servers.items():
+            routes = sdata.get("routes", [])
+            indices_to_delete = []
+            for i, route in enumerate(routes):
+                if "match" in route:
+                    continue
+                handlers = route.get("handle", [])
+                if len(handlers) == 1 and handlers[0].get("handler") == "headers":
+                    indices_to_delete.append(i)
+            for idx in reversed(indices_to_delete):
+                dr = await _request("DELETE", f"/config/apps/http/servers/{sname}/routes/{idx}")
+                dr.raise_for_status()
+                total_deleted += 1
+            if indices_to_delete:
+                detail.append({"server": sname, "deleted_count": len(indices_to_delete)})
+        return {"result": {"deleted": total_deleted, "detail": detail}}
+    except Exception as e:
+        err = _err(e, "delete_global_headers")
+        if server_name:
+            err["server_name"] = server_name
+        return err
 
 
 @mcp.tool()
