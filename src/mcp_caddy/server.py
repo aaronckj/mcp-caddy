@@ -195,7 +195,7 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
                 }
             server_name = next(iter(servers))
 
-        match_rule: dict = {"host": [host.strip()]}
+        match_rule: dict = {"host": [host]}
         if path_prefix:
             p = path_prefix.strip().rstrip("/")
             # If no wildcard, match both the exact path and all children
@@ -205,11 +205,11 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
                 match_rule["path"] = [p]
         route = {
             "match": [match_rule],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host.strip(), "upstream": upstream.strip(), "path_prefix": path_prefix.strip() or None, "server": server_name}}
+        return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "server": server_name}}
     except Exception as e:
         return _err(e, "add_reverse_proxy_route")
 
@@ -234,12 +234,12 @@ async def add_path_route(path: str, upstream: str, server_name: str = "") -> dic
             server_name = next(iter(servers))
 
         route = {
-            "match": [{"path": [path.strip()]}],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+            "match": [{"path": [path]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "path": path.strip(), "upstream": upstream.strip(), "server": server_name}}
+        return {"result": {"added": True, "path": path, "upstream": upstream, "server": server_name}}
     except Exception as e:
         return _err(e, "add_path_route")
 
@@ -264,12 +264,12 @@ async def add_static_file_server(path: str, root: str, server_name: str = "") ->
             server_name = next(iter(servers))
 
         route = {
-            "match": [{"path": [path.strip()]}],
-            "handle": [{"handler": "file_server", "root": root.strip()}],
+            "match": [{"path": [path]}],
+            "handle": [{"handler": "file_server", "root": root}],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "server": server_name, "path": path.strip(), "root": root.strip()}}
+        return {"result": {"added": True, "server": server_name, "path": path, "root": root}}
     except Exception as e:
         return _err(e, "add_static_file_server")
 
@@ -296,16 +296,16 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
             server_name = next(iter(servers))
 
         route = {
-            "match": [{"host": [from_host.strip()]}],
+            "match": [{"host": [from_host]}],
             "handle": [{
                 "handler": "static_response",
                 "status_code": status_code,
-                "headers": {"Location": [to_url.strip()]},
+                "headers": {"Location": [to_url]},
             }],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "from": from_host.strip(), "to": to_url.strip(), "status_code": status_code, "server": server_name}}
+        return {"result": {"added": True, "from": from_host, "to": to_url, "status_code": status_code, "server": server_name}}
     except Exception as e:
         return _err(e, "add_redirect")
 
@@ -333,15 +333,15 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
             server_name = next(iter(servers))
 
         route = {
-            "match": [{"host": [host.strip()]}],
+            "match": [{"host": [host]}],
             "handle": [{
                 "handler": "headers",
-                "response": {"set": {header_name.strip(): [header_value.strip()]}},
+                "response": {"set": {header_name: [header_value]}},
             }],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host.strip(), "header": header_name.strip(), "server": server_name}}
+        return {"result": {"added": True, "host": host, "header": header_name, "server": server_name}}
     except Exception as e:
         return _err(e, "add_header_route")
 
@@ -355,9 +355,9 @@ async def delete_route(server_name: str, route_index: int) -> dict:
     if route_index < 0:
         return {"error": "route_index must be >= 0", "tool": "delete_route"}
     try:
-        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name.strip()}/routes/{route_index}")
+        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
         resp.raise_for_status()
-        return {"result": {"server_name": server_name.strip(), "route_index": route_index, "deleted": True}}
+        return {"result": {"server_name": server_name, "route_index": route_index, "deleted": True}}
     except Exception as e:
         return _err(e, "delete_route")
 
@@ -505,11 +505,11 @@ async def create_server(name: str, listen_addresses: str) -> dict:
     try:
         resp = await _request(
             "PATCH",
-            f"/config/apps/http/servers/{name.strip()}",
+            f"/config/apps/http/servers/{name}",
             json={"listen": listen, "routes": []},
         )
         resp.raise_for_status()
-        return {"result": {"created": True, "name": name.strip(), "listen": listen}}
+        return {"result": {"created": True, "name": name, "listen": listen}}
     except Exception as e:
         return _err(e, "create_server")
 
@@ -611,11 +611,11 @@ async def update_route(server_name: str, route_index: int, config_json: str) -> 
     try:
         resp = await _request(
             "PATCH",
-            f"/config/apps/http/servers/{server_name.strip()}/routes/{route_index}",
+            f"/config/apps/http/servers/{server_name}/routes/{route_index}",
             json=route_config,
         )
         resp.raise_for_status()
-        return {"result": {"updated": True, "server_name": server_name.strip(), "route_index": route_index}}
+        return {"result": {"updated": True, "server_name": server_name, "route_index": route_index}}
     except Exception as e:
         return _err(e, "update_route")
 
@@ -644,11 +644,11 @@ async def update_listen_addresses(server_name: str, listen_addresses: str) -> di
     try:
         resp = await _request(
             "PATCH",
-            f"/config/apps/http/servers/{server_name.strip()}/listen",
+            f"/config/apps/http/servers/{server_name}/listen",
             json=listen,
         )
         resp.raise_for_status()
-        return {"result": {"updated": True, "name": server_name.strip(), "listen": listen}}
+        return {"result": {"updated": True, "name": server_name, "listen": listen}}
     except Exception as e:
         return _err(e, "update_listen_addresses")
 
@@ -660,7 +660,7 @@ async def get_pki_ca(ca_name: str) -> dict:
         return {"error": "ca_name must not be empty", "tool": "get_pki_ca"}
     ca_name = ca_name.strip()
     try:
-        resp = await _request("GET", f"/pki/ca/{ca_name.strip()}")
+        resp = await _request("GET", f"/pki/ca/{ca_name}")
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
@@ -680,7 +680,7 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
         return {"error": "new_upstream must not be empty", "tool": "update_upstream"}
     new_upstream = new_upstream.strip()
     try:
-        sn = server_name.strip()
+        sn = server_name
         resp = await _request("GET", f"/config/apps/http/servers/{sn}/routes/{route_index}")
         resp.raise_for_status()
         route = resp.json()
@@ -771,23 +771,23 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
                 return {"error": "No HTTP servers configured in Caddy", "tool": "add_basicauth_route"}
             server_name = next(iter(servers))
         route = {
-            "match": [{"host": [host.strip()]}],
+            "match": [{"host": [host]}],
             "handle": [
                 {
                     "handler": "authentication",
                     "providers": {
                         "http_basic": {
                             "hash": {"algorithm": "bcrypt"},
-                            "accounts": [{"username": username.strip(), "password": hashed_password.strip()}],
+                            "accounts": [{"username": username, "password": hashed_password}],
                         }
                     },
                 },
-                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]},
+                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
             ],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host.strip(), "username": username.strip(), "upstream": upstream.strip(), "server": server_name}}
+        return {"result": {"added": True, "host": host, "username": username, "upstream": upstream, "server": server_name}}
     except Exception as e:
         return _err(e, "add_basicauth_route")
 
@@ -830,7 +830,7 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_rewrite_route"}
     upstream = upstream.strip()
-    prefix = path_prefix.strip().rstrip("/")
+    prefix = path_prefix.rstrip("/")
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -841,15 +841,15 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
                 return {"error": "No HTTP servers configured in Caddy", "tool": "add_rewrite_route"}
             server_name = next(iter(servers))
         route = {
-            "match": [{"host": [host.strip()], "path": [prefix, prefix + "/*"]}],
+            "match": [{"host": [host], "path": [prefix, prefix + "/*"]}],
             "handle": [
                 {"handler": "rewrite", "strip_path_prefix": prefix},
-                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]},
+                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
             ],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host.strip(), "path_prefix": prefix, "upstream": upstream.strip(), "server": server_name}}
+        return {"result": {"added": True, "host": host, "path_prefix": prefix, "upstream": upstream, "server": server_name}}
     except Exception as e:
         return _err(e, "add_rewrite_route")
 
@@ -878,12 +878,12 @@ async def add_compress_route(host: str, server_name: str = "", algorithms: str =
             server_name = next(iter(servers))
         encodings = {a: {} for a in algo_list}
         route = {
-            "match": [{"host": [host.strip()]}],
+            "match": [{"host": [host]}],
             "handle": [{"handler": "encode", "encodings": encodings, "prefer": algo_list}],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host.strip(), "algorithms": algo_list, "server": server_name}}
+        return {"result": {"added": True, "host": host, "algorithms": algo_list, "server": server_name}}
     except Exception as e:
         return _err(e, "add_compress_route")
 
@@ -910,15 +910,15 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
                 return {"error": "No HTTP servers found. Use create_server first.", "tool": "add_request_header_route"}
             server_name = next(iter(servers))
         route = {
-            "match": [{"host": [host.strip()]}],
+            "match": [{"host": [host]}],
             "handle": [{
                 "handler": "headers",
-                "request": {"set": {header_name.strip(): [header_value.strip()]}},
+                "request": {"set": {header_name: [header_value]}},
             }],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host.strip(), "header": header_name.strip(), "server": server_name}}
+        return {"result": {"added": True, "host": host, "header": header_name, "server": server_name}}
     except Exception as e:
         return _err(e, "add_request_header_route")
 
@@ -950,7 +950,7 @@ async def add_cors_route(
                 return {"error": "No HTTP servers configured in Caddy", "tool": "add_cors_route"}
             server_name = next(iter(servers))
         route = {
-            "match": [{"host": [host.strip()]}],
+            "match": [{"host": [host]}],
             "handle": [{
                 "handler": "headers",
                 "response": {
@@ -968,7 +968,7 @@ async def add_cors_route(
         return {
             "result": {
                 "added": True,
-                "host": host.strip(),
+                "host": host,
                 "allow_origins": origins,
                 "allow_methods": methods,
                 "allow_headers": headers,
@@ -1052,11 +1052,11 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
                 return {"error": "No HTTP servers configured in Caddy", "tool": "add_ip_filter_route"}
             server_name = next(iter(servers))
         route = {
-            "match": [{"host": [host.strip()], "remote_ip": {"ranges": ip_list}}],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+            "match": [{"host": [host], "remote_ip": {"ranges": ip_list}}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         deny_route = {
-            "match": [{"host": [host.strip()]}],
+            "match": [{"host": [host]}],
             "handle": [{"handler": "static_response", "status_code": 403}],
         }
         for r in [route, deny_route]:
@@ -1065,8 +1065,8 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
         return {
             "result": {
                 "added": True,
-                "host": host.strip(),
-                "upstream": upstream.strip(),
+                "host": host,
+                "upstream": upstream,
                 "allowed_ips": ip_list,
                 "server": server_name,
             }
@@ -1116,9 +1116,9 @@ async def get_route(server_name: str, route_index: int) -> dict:
     if route_index < 0:
         return {"error": "route_index must be >= 0", "tool": "get_route"}
     try:
-        resp = await _request("GET", f"/config/apps/http/servers/{server_name.strip()}/routes/{route_index}")
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
         resp.raise_for_status()
-        return {"result": {"server_name": server_name.strip(), "route_index": route_index, "route": resp.json()}}
+        return {"result": {"server_name": server_name, "route_index": route_index, "route": resp.json()}}
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             return {"error": f"Route index {route_index} not found in server '{server_name}'", "tool": "get_route"}
