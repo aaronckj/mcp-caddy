@@ -178,7 +178,7 @@ async def get_route(server_name: str, route_index: int) -> dict:
     if route_index < 0:
         return {"error": "route_index must be >= 0", "tool": "get_route"}
     try:
-        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name.strip()}/routes/{route_index}")
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
@@ -205,16 +205,16 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
                 }
             server_name = next(iter(servers))
 
-        match_rule: dict = {"host": [host]}
+        match_rule: dict = {"host": [host.strip()]}
         if path_prefix:
-            match_rule["path"] = [path_prefix if path_prefix.endswith("*") else path_prefix]
+            match_rule["path"] = [path_prefix.strip() if path_prefix.strip().endswith("*") else path_prefix.strip()]
         route = {
             "match": [match_rule],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix or None, "server": server_name}}
+        return {"result": {"added": True, "host": host.strip(), "upstream": upstream.strip(), "path_prefix": path_prefix.strip() or None, "server": server_name}}
     except Exception as e:
         return _err(e, "add_reverse_proxy_route")
 
@@ -237,12 +237,12 @@ async def add_path_route(path: str, upstream: str, server_name: str = "") -> dic
             server_name = next(iter(servers))
 
         route = {
-            "match": [{"path": [path]}],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
+            "match": [{"path": [path.strip()]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "path": path, "upstream": upstream, "server": server_name}}
+        return {"result": {"added": True, "path": path.strip(), "upstream": upstream.strip(), "server": server_name}}
     except Exception as e:
         return _err(e, "add_path_route")
 
@@ -265,12 +265,12 @@ async def add_static_file_server(path: str, root: str, server_name: str = "") ->
             server_name = next(iter(servers))
 
         route = {
-            "match": [{"path": [path]}],
-            "handle": [{"handler": "file_server", "root": root}],
+            "match": [{"path": [path.strip()]}],
+            "handle": [{"handler": "file_server", "root": root.strip()}],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "server": server_name, "path": path, "root": root}}
+        return {"result": {"added": True, "server": server_name, "path": path.strip(), "root": root.strip()}}
     except Exception as e:
         return _err(e, "add_static_file_server")
 
@@ -742,11 +742,11 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
                     "handler": "authentication",
                     "providers": {
                         "http_basic": {
-                            "accounts": [{"username": username, "password": hashed_password}]
+                            "accounts": [{"username": username.strip(), "password": hashed_password.strip()}]
                         }
                     },
                 },
-                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
+                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]},
             ],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
