@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -1549,6 +1550,75 @@ async def get_pki_ca_certificates(ca_name: str = "local") -> dict:
         return {"result": resp.json()}
     except Exception as e:
         return _err(e, "get_pki_ca_certificates")
+
+
+@mcp.tool()
+async def add_stub_response_route(host: str, body: str = "", status_code: int = 200, content_type: str = "text/plain; charset=utf-8", path_prefix: str = "", server_name: str = "") -> dict:
+    """Add a route that returns a fixed HTTP response without any backend. Useful for health check endpoints (e.g. /health → 200 OK), mock APIs, maintenance notices, or stub paths. host: domain to match. body: response body text (empty = no body). status_code: HTTP status code (default 200). content_type: default 'text/plain; charset=utf-8'. path_prefix: optional URL path to restrict the match. server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_stub_response_route"}
+    host = host.strip()
+    if not (100 <= status_code <= 599):
+        return {"error": f"status_code must be 100-599, got {status_code}", "tool": "add_stub_response_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_stub_response_route"}
+            server_name = next(iter(servers))
+        server_name = server_name.strip()
+        match_rule: dict = {"host": [host]}
+        if path_prefix and path_prefix.strip():
+            p = path_prefix.strip().rstrip("/")
+            match_rule["path"] = [p, p + "/*"] if not p.endswith("*") else [p]
+        handler: dict = {"handler": "static_response", "status_code": status_code}
+        if body:
+            handler["body"] = body
+        if content_type and content_type.strip():
+            handler["headers"] = {"Content-Type": [content_type.strip()]}
+        route = {"match": [match_rule], "handle": [handler]}
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "status_code": status_code, "path_prefix": path_prefix.strip() or None, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_stub_response_route")
+
+
+@mcp.tool()
+async def add_global_headers(headers: str, server_name: str = "") -> dict:
+    """Add response headers to ALL requests on a Caddy HTTP server, with no host matcher. Applied before route-specific handlers. Ideal for security headers (Strict-Transport-Security, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, etc.) that should apply everywhere. headers: 'Name: Value' pairs separated by newlines or semicolons. server_name: auto-detects first server if empty."""
+    if not headers or not headers.strip():
+        return {"error": "headers must not be empty", "tool": "add_global_headers"}
+    parsed: dict[str, list[str]] = {}
+    for raw in re.split(r"[;\n]", headers):
+        raw = raw.strip()
+        if not raw:
+            continue
+        if ":" not in raw:
+            return {"error": f"Invalid header '{raw}': must be 'Name: Value'", "tool": "add_global_headers"}
+        hname, _, hval = raw.partition(":")
+        parsed[hname.strip()] = [hval.strip()]
+    if not parsed:
+        return {"error": "No valid headers parsed", "tool": "add_global_headers"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_global_headers"}
+            server_name = next(iter(servers))
+        server_name = server_name.strip()
+        route = {"handle": [{"handler": "headers", "response": {"set": parsed}}]}
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "headers": parsed, "server": server_name, "scope": "global"}}
+    except Exception as e:
+        return _err(e, "add_global_headers")
 
 
 @mcp.tool()
