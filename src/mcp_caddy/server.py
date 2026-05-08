@@ -429,6 +429,8 @@ async def reload(source: str = "") -> dict:
             cur = await _request("GET", "/config/")
             cur.raise_for_status()
             config_data = cur.json()
+            if config_data is None:
+                return {"error": "No config currently loaded in Caddy. Provide a source config to load.", "tool": "reload"}
         elif source.lstrip().startswith("{"):
             config_data = json.loads(source)
         else:
@@ -675,6 +677,18 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
         return {"result": {"updated": True, "server": server_name, "route_index": route_index, "upstream": new_upstream.strip()}}
     except Exception as e:
         return _err(e, "update_upstream")
+
+
+
+@mcp.tool()
+async def stop_caddy() -> dict:
+    """Gracefully stop the Caddy server process. WARNING: this terminates the Caddy admin API — the server will be unreachable until restarted externally."""
+    try:
+        resp = await _request("POST", "/stop")
+        resp.raise_for_status()
+        return {"result": {"stopped": True}}
+    except Exception as e:
+        return _err(e, "stop_caddy")
 
 
 def main() -> None:
