@@ -450,9 +450,7 @@ async def adapt_config(caddyfile: str) -> dict:
         resp = await _request(
             "POST",
             "/adapt",
-            content=caddyfile.encode(),
-            params={"adapter": "caddyfile"},
-            headers={"Content-Type": "text/caddyfile"},
+            json={"adapter": "caddyfile", "body": caddyfile},
         )
         resp.raise_for_status()
         return {"result": resp.json()}
