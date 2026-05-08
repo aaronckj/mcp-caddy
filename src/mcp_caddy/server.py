@@ -107,7 +107,7 @@ async def get_server(server_name: str) -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return _err(e, "get_server")
+        err = _err(e, "get_server"); err["server_name"] = server_name; return err
 
 
 @mcp.tool()
@@ -121,7 +121,7 @@ async def delete_server(server_name: str) -> dict:
         resp.raise_for_status()
         return {"result": {"deleted": True, "name": server_name}}
     except Exception as e:
-        return _err(e, "delete_server")
+        err = _err(e, "delete_server"); err["server_name"] = server_name; return err
 
 
 @mcp.tool()
@@ -139,7 +139,7 @@ async def create_server(server_name: str, listen: str = ":443") -> dict:
         resp.raise_for_status()
         return {"result": {"created": True, "name": server_name, "listen": listen_addrs}}
     except Exception as e:
-        return _err(e, "create_server")
+        err = _err(e, "create_server"); err["server_name"] = server_name; return err
 
 
 def _validate_upstream_dial(upstream: str) -> str | None:
@@ -303,7 +303,10 @@ async def add_path_route(path: str, upstream: str, server_name: str = "") -> dic
         resp.raise_for_status()
         return {"result": {"added": True, "path": path, "upstream": upstream, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_path_route")
+        err = _err(e, "add_path_route")
+        err["path"] = path
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -333,7 +336,10 @@ async def add_static_file_server(path: str, root: str, server_name: str = "") ->
         resp.raise_for_status()
         return {"result": {"added": True, "server": server_name, "path": path, "root": root}}
     except Exception as e:
-        return _err(e, "add_static_file_server")
+        err = _err(e, "add_static_file_server")
+        err["path"] = path
+        err["root"] = root
+        return err
 
 
 @mcp.tool()
@@ -369,7 +375,10 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
         resp.raise_for_status()
         return {"result": {"added": True, "from": from_host, "to": to_url, "status_code": status_code, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_redirect")
+        err = _err(e, "add_redirect")
+        err["from_host"] = from_host
+        err["to_url"] = to_url
+        return err
 
 
 @mcp.tool()
@@ -423,7 +432,7 @@ async def delete_route(server_name: str, route_index: int) -> dict:
         resp.raise_for_status()
         return {"result": {"server_name": server_name, "route_index": route_index, "deleted": True}}
     except Exception as e:
-        return _err(e, "delete_route")
+        err = _err(e, "delete_route"); err["server_name"] = server_name; err["route_index"] = route_index; return err
 
 
 @mcp.tool()
@@ -456,7 +465,7 @@ async def mark_upstream_health(upstream_address: str, healthy: bool) -> dict:
         resp.raise_for_status()
         return {"result": {"upstream": upstream_address, "healthy": healthy}}
     except Exception as e:
-        return _err(e, "mark_upstream_health")
+        err = _err(e, "mark_upstream_health"); err["upstream_address"] = upstream_address; return err
 
 
 @mcp.tool()
@@ -739,7 +748,7 @@ async def update_route(server_name: str, route_index: int, config_json: str) -> 
         resp.raise_for_status()
         return {"result": {"updated": True, "server_name": server_name, "route_index": route_index}}
     except Exception as e:
-        return _err(e, "update_route")
+        err = _err(e, "update_route"); err["server_name"] = server_name; err["route_index"] = route_index; return err
 
 
 @mcp.tool()
@@ -1673,7 +1682,10 @@ async def add_stub_response_route(host: str, body: str = "", status_code: int = 
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "status_code": status_code, "path_prefix": path_prefix.strip() or None, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_stub_response_route")
+        err = _err(e, "add_stub_response_route")
+        err["host"] = host
+        err["status_code"] = status_code
+        return err
 
 
 @mcp.tool()
