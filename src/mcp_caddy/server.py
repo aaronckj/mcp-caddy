@@ -992,6 +992,57 @@ async def delete_route_by_host(host: str, server_name: str = "") -> dict:
 
 
 @mcp.tool()
+async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server_name: str = "") -> dict:
+    """Add a reverse proxy route that only allows requests from specific IP addresses or CIDR ranges. Requests from other IPs receive a 403. host: domain to match. upstream: backend address. allowed_ips: comma-separated IPs or CIDRs (e.g., '192.168.1.0/24,10.0.0.5'). server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_ip_filter_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_ip_filter_route"}
+    if not allowed_ips or not allowed_ips.strip():
+        return {"error": "allowed_ips must not be empty", "tool": "add_ip_filter_route"}
+    ip_list = [ip.strip() for ip in allowed_ips.split(",") if ip.strip()]
+    if not ip_list:
+        return {"error": "allowed_ips must contain at least one IP or CIDR", "tool": "add_ip_filter_route"}
+    try:
+        import ipaddress as _ip
+        for ip in ip_list:
+            _ip.ip_network(ip, strict=False)
+    except ValueError as e:
+        return {"error": f"Invalid IP/CIDR in allowed_ips: {e}", "tool": "add_ip_filter_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_ip_filter_route"}
+            server_name = next(iter(servers))
+        route = {
+            "match": [{"host": [host.strip()], "remote_ip": {"ranges": ip_list}}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+        }
+        deny_route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "static_response", "status_code": 403}],
+        }
+        for r in [route, deny_route]:
+            resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=r)
+            resp.raise_for_status()
+        return {
+            "result": {
+                "added": True,
+                "host": host.strip(),
+                "upstream": upstream.strip(),
+                "allowed_ips": ip_list,
+                "server": server_name,
+            }
+        }
+    except Exception as e:
+        return _err(e, "add_ip_filter_route")
+
+
+@mcp.tool()
 async def list_modules() -> dict:
     """List all Caddy modules currently loaded in the running server. Useful for checking whether optional modules (rate_limit, crowdsec, etc.) are available before trying to use them in routes."""
     try:
