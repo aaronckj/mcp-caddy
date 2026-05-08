@@ -1070,13 +1070,9 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
         prefix = "/" + prefix
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_rewrite_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host], "path": [prefix, prefix + "/*"]}],
             "handle": [
@@ -1084,9 +1080,12 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
                 {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
             ],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "path_prefix": prefix, "upstream": upstream, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "path_prefix": prefix, "upstream": upstream, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_rewrite_route"); err["host"] = host; err["upstream"] = upstream; return err
 
@@ -1106,21 +1105,20 @@ async def add_compress_route(host: str, server_name: str = "", algorithms: str =
         return {"error": "algorithms must not be empty", "tool": "add_compress_route"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_compress_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         encodings = {a: {} for a in algo_list}
         route = {
             "match": [{"host": [host]}],
             "handle": [{"handler": "encode", "encodings": encodings, "prefer": algo_list}],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "algorithms": algo_list, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "algorithms": algo_list, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_compress_route")
         err["host"] = host
@@ -1431,13 +1429,9 @@ async def add_maintenance_route(host: str, message: str = "Service temporarily u
     message = message.strip() or "Service temporarily unavailable. Please try again later."
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_maintenance_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host]}],
             "handle": [{
@@ -1450,9 +1444,12 @@ async def add_maintenance_route(host: str, message: str = "Service temporarily u
                 },
             }],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "status_code": 503, "server": server_name, "message": message}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "status_code": 503, "message": message, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_maintenance_route"); err["host"] = host; return err
 
@@ -1546,13 +1543,9 @@ async def add_websocket_route(host: str, upstream: str, server_name: str = "", p
         return {"error": err, "tool": "add_websocket_route"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_websocket_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         match_rule: dict = {"host": [host]}
         if path_prefix and path_prefix.strip():
             p = path_prefix.strip().rstrip("/")
@@ -1567,9 +1560,12 @@ async def add_websocket_route(host: str, upstream: str, server_name: str = "", p
                 "flush_interval": -1,
             }],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "flush_interval": -1, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "flush_interval": -1, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_websocket_route"); err["host"] = host; err["upstream"] = upstream; return err
 
