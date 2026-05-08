@@ -2314,6 +2314,42 @@ async def add_method_match_route(
         return _err(e, "add_method_match_route")
 
 
+@mcp.tool()
+async def add_query_match_route(
+    host: str,
+    query_param: str,
+    query_value: str,
+    upstream: str,
+    server_name: str = "",
+) -> dict:
+    """Add a route that matches requests containing a specific URL query parameter value, proxying to a different upstream. Useful for feature flags, debug routing, or versioned API dispatch. query_param: URL query key (e.g. 'version'). query_value: value to match (e.g. 'v2'). Non-matching requests fall through to other routes. Inserted at index 0 for priority."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_query_match_route"}
+    if not query_param or not query_param.strip():
+        return {"error": "query_param must not be empty", "tool": "add_query_match_route"}
+    if not query_value or not query_value.strip():
+        return {"error": "query_value must not be empty", "tool": "add_query_match_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_query_match_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()], "query": {query_param.strip(): [query_value.strip()]}}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.insert(0, route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "match_query": f"{query_param}={query_value}", "upstream": upstream, "route_index": 0}}
+    except Exception as e:
+        return _err(e, "add_query_match_route")
+
+
 def main() -> None:
     mcp.run()
 
