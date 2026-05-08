@@ -843,7 +843,7 @@ async def update_log_config(config_json: str) -> dict:
     except json.JSONDecodeError as e:
         return {"error": f"Invalid JSON: {e}", "tool": "update_log_config"}
     try:
-        resp = await _request("PATCH", "/config/logging", json=log_cfg)
+        resp = await _request("PUT", "/config/logging", json=log_cfg)
         resp.raise_for_status()
         return {"result": {"updated": True}}
     except Exception as e:
@@ -1042,6 +1042,13 @@ async def add_cors_route(
         return {"error": "host must not be empty", "tool": "add_cors_route"}
     host = host.strip()
     origins = allow_origins.strip() or "*"
+    # CORS spec: Access-Control-Allow-Origin must be *, a single origin, or "null"
+    # Multiple comma-separated origins in one header is not valid per RFC 6454
+    if origins != "*" and "," in origins:
+        return {
+            "error": "allow_origins must be '*' or a single origin URL. The CORS spec does not allow multiple origins in one Access-Control-Allow-Origin header. Call add_cors_route once per origin, or use '*'.",
+            "tool": "add_cors_route",
+        }
     methods = allow_methods.strip() or "GET,POST,PUT,DELETE,OPTIONS"
     hdrs = allow_headers.strip() or "Content-Type,Authorization"
     max_age = max(0, max_age)
