@@ -186,8 +186,8 @@ async def get_route(server_name: str, route_index: int) -> dict:
 
 
 @mcp.tool()
-async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "") -> dict:
-    """Add a host-based reverse proxy route to Caddy. host: domain (e.g. 'app.example.com'). upstream: backend dial address (e.g. 'localhost:3000'). server_name: Caddy server block (auto-detects first server if empty)."""
+async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "", path_prefix: str = "") -> dict:
+    """Add a reverse proxy route to Caddy. host: domain (e.g. 'app.example.com'). upstream: backend dial address (e.g. 'localhost:3000'). path_prefix: optional URL path prefix to match in addition to host (e.g. '/api/*'). server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_reverse_proxy_route"}
     if not upstream or not upstream.strip():
@@ -205,13 +205,16 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
                 }
             server_name = next(iter(servers))
 
+        match_rule: dict = {"host": [host]}
+        if path_prefix:
+            match_rule["path"] = [path_prefix if path_prefix.endswith("*") else path_prefix]
         route = {
-            "match": [{"host": [host]}],
+            "match": [match_rule],
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "upstream": upstream, "server": server_name}}
+        return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix or None, "server": server_name}}
     except Exception as e:
         return _err(e, "add_reverse_proxy_route")
 
@@ -710,6 +713,47 @@ async def update_log_config(config_json: str) -> dict:
         return {"result": {"updated": True}}
     except Exception as e:
         return _err(e, "update_log_config")
+
+
+@mcp.tool()
+async def add_basicauth_route(host: str, username: str, hashed_password: str, upstream: str, server_name: str = "") -> dict:
+    """Add a reverse proxy route protected by HTTP basic authentication. hashed_password: bcrypt hash of the password (generate with: caddy hash-password --plaintext 'yourpassword'). upstream: backend address. server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_basicauth_route"}
+    if not username or not username.strip():
+        return {"error": "username must not be empty", "tool": "add_basicauth_route"}
+    if not hashed_password or not hashed_password.strip():
+        return {"error": "hashed_password must not be empty", "tool": "add_basicauth_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_basicauth_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_basicauth_route"}
+            server_name = next(iter(servers))
+        route = {
+            "match": [{"host": [host]}],
+            "handle": [
+                {
+                    "handler": "authentication",
+                    "providers": {
+                        "http_basic": {
+                            "accounts": [{"username": username, "password": hashed_password}]
+                        }
+                    },
+                },
+                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
+            ],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "username": username, "upstream": upstream, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_basicauth_route")
 
 
 @mcp.tool()
