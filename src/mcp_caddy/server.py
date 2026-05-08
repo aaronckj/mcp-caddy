@@ -1006,9 +1006,12 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
                 proxy_handler,
             ],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "username": username, "upstream": upstream or "(none)", "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "username": username, "upstream": upstream or "(none)", "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_basicauth_route")
         err["host"] = host
@@ -1131,13 +1134,9 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
     header_value = header_value.strip()
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers found. Use create_server first.", "tool": "add_request_header_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host]}],
             "handle": [{
@@ -1145,9 +1144,12 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
                 "request": {"set": {header_name: [header_value]}},
             }],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "header": header_name, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "header": header_name, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_request_header_route"); err["host"] = host; return err
 
@@ -1198,13 +1200,9 @@ async def add_cors_route(
         cors_headers["Access-Control-Allow-Credentials"] = ["true"]
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_cors_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
 
         if upstream and upstream.strip():
             upstream = upstream.strip()
@@ -1240,11 +1238,13 @@ async def add_cors_route(
                 "handle": [{"handler": "headers", "response": {"set": cors_headers}}],
             }
 
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
         return {
             "result": {
-                "added": True,
                 "host": host,
                 "upstream": upstream.strip() if upstream else None,
                 "allow_origins": origins,
@@ -1253,6 +1253,7 @@ async def add_cors_route(
                 "max_age": max_age,
                 "allow_credentials": allow_credentials,
                 "server": server_name,
+                "route_index": len(routes) - 1,
             }
         }
     except Exception as e:
@@ -1329,13 +1330,9 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
         return {"error": f"Invalid IP/CIDR in allowed_ips: {e}", "tool": "add_ip_filter_route"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_ip_filter_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host], "remote_ip": {"ranges": ip_list}}],
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
@@ -1344,16 +1341,20 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
             "match": [{"host": [host]}],
             "handle": [{"handler": "static_response", "status_code": 403}],
         }
-        for r in [route, deny_route]:
-            resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=r)
-            resp.raise_for_status()
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        routes.append(deny_route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
         return {
             "result": {
-                "added": True,
                 "host": host,
                 "upstream": upstream,
                 "allowed_ips": ip_list,
                 "server": server_name,
+                "allow_route_index": len(routes) - 2,
+                "deny_route_index": len(routes) - 1,
             }
         }
     except Exception as e:
@@ -1469,13 +1470,9 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
         selection_policy["name"] = cookie_name.strip() or "lb_cookie"
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_load_balanced_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host]}],
             "handle": [{
@@ -1484,9 +1481,12 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
                 "load_balancing": {"selection_policy": selection_policy},
             }],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "upstreams": upstream_list, "lb_policy": lb_policy, "cookie_name": cookie_name if lb_policy == "cookie" else None, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "upstreams": upstream_list, "lb_policy": lb_policy, "cookie_name": cookie_name if lb_policy == "cookie" else None, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_load_balanced_route")
         err["host"] = host
