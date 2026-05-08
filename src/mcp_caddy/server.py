@@ -790,7 +790,7 @@ async def add_https_redirect(host: str, http_server_name: str = "") -> dict:
         add_resp.raise_for_status()
         return {"result": {"added": True, "host": host, "server": target_server}}
     except Exception as e:
-        return _err(e, "add_https_redirect")
+        err = _err(e, "add_https_redirect"); err["host"] = host; return err
 
 
 @mcp.tool()
@@ -823,7 +823,7 @@ async def update_listen_addresses(server_name: str, listen_addresses: str) -> di
         resp.raise_for_status()
         return {"result": {"updated": True, "name": server_name, "listen": listen}}
     except Exception as e:
-        return _err(e, "update_listen_addresses")
+        err = _err(e, "update_listen_addresses"); err["server_name"] = server_name; return err
 
 
 @mcp.tool()
@@ -881,7 +881,7 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
         patch_resp.raise_for_status()
         return {"result": {"updated": True, "server": server_name, "route_index": route_index, "upstream": new_upstream}}
     except Exception as e:
-        return _err(e, "update_upstream")
+        err = _err(e, "update_upstream"); err["server_name"] = server_name; err["route_index"] = route_index; err["new_upstream"] = new_upstream; return err
 
 
 
@@ -1030,7 +1030,7 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "path_prefix": prefix, "upstream": upstream, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_rewrite_route")
+        err = _err(e, "add_rewrite_route"); err["host"] = host; err["upstream"] = upstream; return err
 
 
 @mcp.tool()
@@ -1101,7 +1101,7 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "header": header_name, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_request_header_route")
+        err = _err(e, "add_request_header_route"); err["host"] = host; return err
 
 
 @mcp.tool()
@@ -1235,7 +1235,7 @@ async def delete_route_by_host(host: str, server_name: str = "") -> dict:
                 total_deleted += srv_deleted
         return {"result": {"host": host, "deleted": total_deleted}}
     except Exception as e:
-        return _err(e, "delete_route_by_host")
+        err = _err(e, "delete_route_by_host"); err["host"] = host; return err
 
 
 @mcp.tool()
@@ -1291,7 +1291,7 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
             }
         }
     except Exception as e:
-        return _err(e, "add_ip_filter_route")
+        err = _err(e, "add_ip_filter_route"); err["host"] = host; err["upstream"] = upstream; return err
 
 
 @mcp.tool()
@@ -1323,7 +1323,7 @@ async def get_routes_by_host(host: str, server_name: str = "") -> dict:
                     matches.append({"server_name": srv_name, "route_index": idx, "route": route})
         return {"result": {"host": host, "matches": matches, "count": len(matches)}}
     except Exception as e:
-        return _err(e, "get_routes_by_host")
+        err = _err(e, "get_routes_by_host"); err["host"] = host; return err
 
 
 @mcp.tool()
@@ -1420,7 +1420,7 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "upstreams": upstream_list, "lb_policy": lb_policy, "server": server_name}}
     except Exception as e:
-        return _err(e, "add_load_balanced_route")
+        err = _err(e, "add_load_balanced_route"); err["host"] = host; return err
 
 
 @mcp.tool()
@@ -1448,7 +1448,7 @@ async def get_server_timeouts(server_name: str) -> dict:
         configured = {k: server_cfg[k] for k in timeout_keys if k in server_cfg}
         return {"result": {"server": server_name, "timeouts": configured, "note": "absent fields = no timeout (Caddy default)"}}
     except Exception as e:
-        return _err(e, "get_server_timeouts")
+        err = _err(e, "get_server_timeouts"); err["server_name"] = server_name; return err
 
 
 @mcp.tool()
