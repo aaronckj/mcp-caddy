@@ -508,7 +508,9 @@ async def adapt_config(caddyfile: str) -> dict:
         resp = await _request(
             "POST",
             "/adapt",
-            json={"adapter": "caddyfile", "body": caddyfile},
+            params={"adapter": "caddyfile"},
+            content=caddyfile.encode(),
+            headers={"Content-Type": "text/caddyfile"},
         )
         resp.raise_for_status()
         return {"result": resp.json()}
@@ -845,6 +847,14 @@ async def update_listen_addresses(server_name: str, listen_addresses: str) -> di
         return {"error": "listen_addresses must not be empty", "tool": "update_listen_addresses"}
     listen_addresses = listen_addresses.strip()
     listen = [a.strip() for a in listen_addresses.split(",") if a.strip()]
+    if not listen:
+        return {"error": "listen_addresses produced no valid entries", "tool": "update_listen_addresses"}
+    for addr in listen:
+        if not re.match(r'^(.*):(\d{1,5})$', addr):
+            return {"error": f"Invalid listen address '{addr}': must be host:port or :port (e.g. ':443', '0.0.0.0:80')", "tool": "update_listen_addresses"}
+        port_str = addr.rsplit(":", 1)[-1]
+        if not (1 <= int(port_str) <= 65535):
+            return {"error": f"Invalid port {port_str} in '{addr}': must be 1-65535", "tool": "update_listen_addresses"}
     try:
         resp = await _request(
             "PATCH",
@@ -868,7 +878,7 @@ async def get_pki_ca(ca_name: str) -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return _err(e, "get_pki_ca")
+        err = _err(e, "get_pki_ca"); err["ca_name"] = ca_name; return err
 
 
 
