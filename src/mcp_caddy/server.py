@@ -1985,6 +1985,58 @@ async def add_request_header_route(
         return _err(e, "add_request_header_route")
 
 
+@mcp.tool()
+async def add_static_file_route(
+    host: str,
+    root: str,
+    browse: bool = False,
+    hide_dotfiles: bool = True,
+    server_name: str = "",
+) -> dict:
+    """Add a route that serves static files from a directory on the Caddy server's filesystem. host: virtual host to match. root: absolute path to the directory to serve (e.g. '/var/www/html'). browse: enable directory listing when no index file exists. hide_dotfiles: hide files starting with '.' (default True)."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_static_file_route"}
+    if not root or not root.strip():
+        return {"error": "root must not be empty", "tool": "add_static_file_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        handler: dict = {"handler": "file_server", "root": root.strip()}
+        if browse:
+            handler["browse"] = {}
+        if hide_dotfiles:
+            handler["hide"] = [".*"]
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [handler],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "root": root, "browse": browse, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_static_file_route")
+
+
+@mcp.tool()
+async def get_route(index: int, server_name: str = "") -> dict:
+    """Get a specific route by its index in the routes array. Use list_routes to find the index. index: zero-based position in the routes list."""
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{index}")
+        resp.raise_for_status()
+        return {"result": {"server": server_name, "index": index, "route": resp.json()}}
+    except Exception as e:
+        return _err(e, "get_route")
+
+
 def main() -> None:
     mcp.run()
 
