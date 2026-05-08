@@ -2411,6 +2411,20 @@ async def enable_server_access_log(
         return _err(e, "enable_server_access_log")
 
 
+@mcp.tool()
+async def disable_server_access_log(server_name: str) -> dict:
+    """Disable HTTP access logging for a Caddy server, removing the log configuration entirely. Use list_servers to find server names. Use enable_server_access_log to re-enable."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "disable_server_access_log"}
+    server_name = server_name.strip()
+    try:
+        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name}/logs")
+        resp.raise_for_status()
+        return {"result": {"server": server_name, "access_log_disabled": True}}
+    except Exception as e:
+        return _err(e, "disable_server_access_log")
+
+
 def main() -> None:
     mcp.run()
 
