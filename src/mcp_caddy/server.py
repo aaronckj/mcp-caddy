@@ -257,6 +257,8 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
         if health_path and health_path.strip():
             handler["health_checks"] = {"active": {"uri": health_path.strip()}}
             if health_interval and health_interval.strip():
+                if err := _validate_go_duration(health_interval.strip(), "health_interval"):
+                    return {"error": err, "tool": "add_reverse_proxy_route"}
                 handler["health_checks"]["active"]["interval"] = health_interval.strip()
         route = {
             "match": [match_rule],
@@ -1536,14 +1538,14 @@ async def set_server_timeouts(server_name: str, read_timeout: str = "", read_hea
     if not any([read_timeout, read_header_timeout, write_timeout, idle_timeout]):
         return {"error": "At least one timeout parameter must be specified", "tool": "set_server_timeouts"}
     timeouts: dict = {}
-    if read_timeout and read_timeout.strip():
-        timeouts["read_timeout"] = read_timeout.strip()
-    if read_header_timeout and read_header_timeout.strip():
-        timeouts["read_header_timeout"] = read_header_timeout.strip()
-    if write_timeout and write_timeout.strip():
-        timeouts["write_timeout"] = write_timeout.strip()
-    if idle_timeout and idle_timeout.strip():
-        timeouts["idle_timeout"] = idle_timeout.strip()
+    for val, key in [
+        (read_timeout, "read_timeout"), (read_header_timeout, "read_header_timeout"),
+        (write_timeout, "write_timeout"), (idle_timeout, "idle_timeout"),
+    ]:
+        if val and val.strip():
+            if err := _validate_go_duration(val.strip(), key):
+                return {"error": err, "tool": "set_server_timeouts"}
+            timeouts[key] = val.strip()
     try:
         resp = await _request("GET", f"/config/apps/http/servers/{server_name}")
         resp.raise_for_status()
@@ -1790,6 +1792,10 @@ async def add_redirect_route(
     server_name: str = "",
 ) -> dict:
     """Add a redirect route. If target is empty, redirects HTTP → HTTPS (same host, same URI). target: full URL or {scheme}://{host}{uri} template. status_code: 301 (permanent) or 302 (temporary). path_prefix: optional path to restrict redirect scope."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_redirect_route"}
+    if not (100 <= status_code <= 599):
+        return {"error": f"status_code must be 100-599, got {status_code}", "tool": "add_redirect_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
