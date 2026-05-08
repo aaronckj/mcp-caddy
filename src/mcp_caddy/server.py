@@ -243,16 +243,9 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
         return {"error": "health_interval requires health_path to be set", "tool": "add_reverse_proxy_route"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {
-                    "error": "No HTTP servers found in Caddy config. Use reload to load an initial configuration first.",
-                    "tool": "add_reverse_proxy_route",
-                }
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
 
         match_rule: dict = {"host": [host]}
         if path_prefix:
@@ -274,9 +267,12 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
             "match": [match_rule],
             "handle": [handler],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "health_path": health_path.strip() or None, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "upstream": upstream, "path_prefix": path_prefix.strip() or None, "health_path": health_path.strip() or None, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_reverse_proxy_route")
         err["host"] = host
@@ -297,21 +293,20 @@ async def add_path_route(path: str, upstream: str, server_name: str = "") -> dic
         return {"error": err, "tool": "add_path_route"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers found in Caddy config. Use reload to load an initial configuration first.", "tool": "add_path_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
 
         route = {
             "match": [{"path": [path]}],
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "path": path, "upstream": upstream, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"path": path, "upstream": upstream, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_path_route")
         err["path"] = path
@@ -330,21 +325,20 @@ async def add_static_file_server(path: str, root: str, server_name: str = "") ->
     root = root.strip()
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_static_file_server"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
 
         route = {
             "match": [{"path": [path]}],
             "handle": [{"handler": "file_server", "root": root}],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "server": server_name, "path": path, "root": root}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "path": path, "root": root, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_static_file_server")
         err["path"] = path
@@ -365,13 +359,9 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
         return {"error": "status_code must be 301, 302, 307, or 308", "tool": "add_redirect"}
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers configured in Caddy", "tool": "add_redirect"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
 
         route = {
             "match": [{"host": [from_host]}],
@@ -381,9 +371,12 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
                 "headers": {"Location": [to_url]},
             }],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "from": from_host, "to": to_url, "status_code": status_code, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"from": from_host, "to": to_url, "status_code": status_code, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_redirect")
         err["from_host"] = from_host
@@ -405,13 +398,9 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
     header_value = header_value.strip()
     try:
         if not server_name:
-            resp = await _request("GET", "/config/")
+            resp = await _request("GET", "/config/apps/http/servers")
             resp.raise_for_status()
-            config = resp.json() or {}
-            servers = config.get("apps", {}).get("http", {}).get("servers", {})
-            if not servers:
-                return {"error": "No HTTP servers found. Use create_server first.", "tool": "add_header_route"}
-            server_name = next(iter(servers))
+            server_name = next(iter(resp.json() or {}), "srv0")
 
         route = {
             "match": [{"host": [host]}],
@@ -420,9 +409,12 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
                 "response": {"set": {header_name: [header_value]}},
             }],
         }
-        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
-        resp.raise_for_status()
-        return {"result": {"added": True, "host": host, "header": header_name, "server": server_name}}
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"host": host, "header": header_name, "server": server_name, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_header_route")
         err["host"] = host
