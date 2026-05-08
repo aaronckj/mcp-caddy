@@ -295,16 +295,16 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
             server_name = next(iter(servers))
 
         route = {
-            "match": [{"host": [from_host]}],
+            "match": [{"host": [from_host.strip()]}],
             "handle": [{
                 "handler": "static_response",
                 "status_code": status_code,
-                "headers": {"Location": [to_url]},
+                "headers": {"Location": [to_url.strip()]},
             }],
         }
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
-        return {"result": {"added": True, "from": from_host, "to": to_url, "status_code": status_code, "server": server_name}}
+        return {"result": {"added": True, "from": from_host.strip(), "to": to_url.strip(), "status_code": status_code, "server": server_name}}
     except Exception as e:
         return _err(e, "add_redirect")
 
@@ -350,9 +350,9 @@ async def delete_route(server_name: str, route_index: int) -> dict:
     if route_index < 0:
         return {"error": "route_index must be >= 0", "tool": "delete_route"}
     try:
-        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
+        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name.strip()}/routes/{route_index}")
         resp.raise_for_status()
-        return {"result": {"server_name": server_name, "route_index": route_index, "deleted": True}}
+        return {"result": {"server_name": server_name.strip(), "route_index": route_index, "deleted": True}}
     except Exception as e:
         return _err(e, "delete_route")
 
@@ -594,11 +594,11 @@ async def update_route(server_name: str, route_index: int, config_json: str) -> 
     try:
         resp = await _request(
             "PATCH",
-            f"/config/apps/http/servers/{server_name}/routes/{route_index}",
+            f"/config/apps/http/servers/{server_name.strip()}/routes/{route_index}",
             json=route_config,
         )
         resp.raise_for_status()
-        return {"result": {"updated": True, "server_name": server_name, "route_index": route_index}}
+        return {"result": {"updated": True, "server_name": server_name.strip(), "route_index": route_index}}
     except Exception as e:
         return _err(e, "update_route")
 
@@ -736,7 +736,7 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
                 return {"error": "No HTTP servers configured in Caddy", "tool": "add_basicauth_route"}
             server_name = next(iter(servers))
         route = {
-            "match": [{"host": [host]}],
+            "match": [{"host": [host.strip()]}],
             "handle": [
                 {
                     "handler": "authentication",
