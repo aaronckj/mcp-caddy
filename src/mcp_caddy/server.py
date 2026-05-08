@@ -67,6 +67,27 @@ async def get_config_path(config_path: str) -> dict:
         return _err(e, "get_config_path")
 
 
+@mcp.tool()
+async def list_servers() -> dict:
+    """List all Caddy HTTP server blocks with their names, listen addresses, and route counts."""
+    try:
+        resp = await _request("GET", "/config/apps/http/servers")
+        resp.raise_for_status()
+        servers = resp.json() or {}
+        return {
+            "result": [
+                {
+                    "name": name,
+                    "listen": cfg.get("listen", []),
+                    "route_count": len(cfg.get("routes", [])),
+                }
+                for name, cfg in servers.items()
+            ]
+        }
+    except Exception as e:
+        return _err(e, "list_servers")
+
+
 def _extract_upstreams(handles: list) -> list[str]:
     """Extract upstream dial addresses, recursing into subroute handlers."""
     upstreams = []
@@ -83,7 +104,7 @@ def _extract_upstreams(handles: list) -> list[str]:
 
 @mcp.tool()
 async def list_routes() -> dict:
-    """List all configured routes (virtual hosts) with hosts, handler, upstreams, and listen addresses."""
+    """List all configured routes (virtual hosts) with hosts, handler, upstreams, listen addresses, and route index."""
     try:
         resp = await _request("GET", "/config/")
         resp.raise_for_status()
@@ -174,6 +195,40 @@ async def add_static_file_server(path: str, root: str, server_name: str = "") ->
         return {"result": {"added": True, "server": server_name, "path": path, "root": root}}
     except Exception as e:
         return _err(e, "add_static_file_server")
+
+
+@mcp.tool()
+async def add_redirect(from_host: str, to_url: str, status_code: int = 301, server_name: str = "") -> dict:
+    """Add an HTTP redirect route. from_host: domain to redirect (e.g. 'old.example.com'). to_url: destination URL. status_code: 301 (permanent), 302 (temporary), 307, or 308."""
+    if not from_host or not from_host.strip():
+        return {"error": "from_host must not be empty", "tool": "add_redirect"}
+    if not to_url or not to_url.strip():
+        return {"error": "to_url must not be empty", "tool": "add_redirect"}
+    if status_code not in {301, 302, 307, 308}:
+        return {"error": "status_code must be 301, 302, 307, or 308", "tool": "add_redirect"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_redirect"}
+            server_name = next(iter(servers))
+
+        route = {
+            "match": [{"host": [from_host]}],
+            "handle": [{
+                "handler": "static_response",
+                "status_code": status_code,
+                "headers": {"Location": [to_url]},
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "from": from_host, "to": to_url, "status_code": status_code, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_redirect")
 
 
 @mcp.tool()
