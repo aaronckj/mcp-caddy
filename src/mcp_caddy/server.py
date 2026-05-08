@@ -1115,6 +1115,9 @@ async def add_cors_route(
 
         if upstream and upstream.strip():
             upstream = upstream.strip()
+            err = _validate_upstream_dial(upstream)
+            if err:
+                return {"error": err, "tool": "add_cors_route"}
             # Full CORS proxy: OPTIONS preflight + proxied requests with CORS headers
             route = {
                 "match": [{"host": [host]}],
@@ -1212,6 +1215,9 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_ip_filter_route"}
     upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_ip_filter_route"}
     if not allowed_ips or not allowed_ips.strip():
         return {"error": "allowed_ips must not be empty", "tool": "add_ip_filter_route"}
     allowed_ips = allowed_ips.strip()
@@ -1835,6 +1841,10 @@ async def add_forward_auth_route(
         return {"error": "auth_url must not be empty", "tool": "add_forward_auth_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_forward_auth_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_forward_auth_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -1848,7 +1858,7 @@ async def add_forward_auth_route(
             "match": [{"host": [host.strip()]}],
             "handle": [{"handler": "subroute", "routes": [
                 {"handle": [forward_auth_handler]},
-                {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}]},
+                {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}]},
             ]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
@@ -2137,6 +2147,10 @@ async def add_sse_route(
         return {"error": "host must not be empty", "tool": "add_sse_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_sse_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_sse_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2151,7 +2165,7 @@ async def add_sse_route(
             "handle": [{
                 "handler": "reverse_proxy",
                 "flush_interval": -1,
-                "upstreams": [{"dial": upstream.strip()}],
+                "upstreams": [{"dial": upstream}],
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
@@ -2253,6 +2267,10 @@ async def add_retry_route(
         return {"error": "host must not be empty", "tool": "add_retry_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_retry_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_retry_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2262,7 +2280,7 @@ async def add_retry_route(
             "match": [{"host": [host.strip()]}],
             "handle": [{
                 "handler": "reverse_proxy",
-                "upstreams": [{"dial": upstream.strip()}],
+                "upstreams": [{"dial": upstream}],
                 "load_balancing": {
                     "retries": retries,
                     "retry_match": [{"status_code": [502, 503, 504]}],
@@ -2651,6 +2669,10 @@ async def add_active_health_check_route(
         return {"error": "host must not be empty", "tool": "add_active_health_check_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_active_health_check_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_active_health_check_route"}
     if expect_status < 100 or expect_status > 599:
         return {"error": "expect_status must be a valid HTTP status code (100-599)", "tool": "add_active_health_check_route"}
     try:
@@ -2662,7 +2684,7 @@ async def add_active_health_check_route(
             "match": [{"host": [host.strip()]}],
             "handle": [{
                 "handler": "reverse_proxy",
-                "upstreams": [{"dial": upstream.strip()}],
+                "upstreams": [{"dial": upstream}],
                 "health_checks": {
                     "active": {
                         "path": health_path.strip() if health_path.strip().startswith("/") else "/" + health_path.strip(),
