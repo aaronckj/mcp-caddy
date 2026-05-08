@@ -2307,7 +2307,7 @@ async def add_response_set_header_route(
     if not headers or not headers.strip():
         return {"error": "headers must not be empty", "tool": "add_response_set_header_route"}
     set_map: dict = {}
-    for raw in re.split(r"\n+", headers):
+    for raw in re.split(r"[;\n]+", headers):
         raw = raw.strip()
         if not raw:
             continue
