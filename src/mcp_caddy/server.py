@@ -658,7 +658,8 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
     if not new_upstream or not new_upstream.strip():
         return {"error": "new_upstream must not be empty", "tool": "update_upstream"}
     try:
-        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
+        sn = server_name.strip()
+        resp = await _request("GET", f"/config/apps/http/servers/{sn}/routes/{route_index}")
         resp.raise_for_status()
         route = resp.json()
 
@@ -673,11 +674,11 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
 
         patch_resp = await _request(
             "PATCH",
-            f"/config/apps/http/servers/{server_name}/routes/{route_index}",
+            f"/config/apps/http/servers/{sn}/routes/{route_index}",
             json=route,
         )
         patch_resp.raise_for_status()
-        return {"result": {"updated": True, "server": server_name, "route_index": route_index, "upstream": new_upstream.strip()}}
+        return {"result": {"updated": True, "server": sn, "route_index": route_index, "upstream": new_upstream.strip()}}
     except Exception as e:
         return _err(e, "update_upstream")
 
