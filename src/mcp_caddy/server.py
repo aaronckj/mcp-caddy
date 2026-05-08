@@ -1762,6 +1762,47 @@ async def duplicate_route(server_name: str, source_index: int, insert_index: int
         return _err(e, "duplicate_route")
 
 
+@mcp.tool()
+async def add_forward_auth_route(
+    host: str,
+    auth_url: str,
+    upstream: str,
+    copy_headers: str = "",
+    server_name: str = "",
+) -> dict:
+    """Add a forward authentication route. Every request is first sent to auth_url; if it returns 2xx, the request proceeds to upstream. Non-2xx blocks the request. copy_headers: comma-separated header names to copy from the auth response to the upstream request (e.g. 'X-User,X-Role'). Requires the forward_auth Caddy module."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_forward_auth_route"}
+    if not auth_url or not auth_url.strip():
+        return {"error": "auth_url must not be empty", "tool": "add_forward_auth_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_forward_auth_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        headers = [h.strip() for h in copy_headers.split(",") if h.strip()] if copy_headers else []
+        forward_auth_handler: dict = {"handler": "forward_auth", "uri": auth_url.strip()}
+        if headers:
+            forward_auth_handler["copy_headers"] = headers
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "subroute", "routes": [
+                {"handle": [forward_auth_handler]},
+                {"handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}]},
+            ]}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "auth_url": auth_url, "upstream": upstream, "copy_headers": headers}}
+    except Exception as e:
+        return _err(e, "add_forward_auth_route")
+
+
 def main() -> None:
     mcp.run()
 
