@@ -1814,6 +1814,29 @@ async def add_trusted_proxies(ranges: str = "private_ranges", server_name: str =
 
 
 @mcp.tool()
+async def delete_trusted_proxies(server_name: str = "") -> dict:
+    """Remove trusted proxy IP range configuration from a Caddy HTTP server. After removal, Caddy will no longer trust X-Forwarded-For headers from upstream proxies. server_name: auto-detects first server if empty."""
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "delete_trusted_proxies"}
+            server_name = next(iter(servers))
+        server_name = server_name.strip()
+        del_resp = await _request("DELETE", f"/config/apps/http/servers/{server_name}/trusted_proxies")
+        if del_resp.status_code not in (200, 204, 404):
+            del_resp.raise_for_status()
+        return {"result": {"deleted": True, "server": server_name}}
+    except Exception as e:
+        err = _err(e, "delete_trusted_proxies")
+        err["server_name"] = server_name
+        return err
+
+
+@mcp.tool()
 async def list_virtual_hosts() -> dict:
     """List all virtual hosts (domain names) configured across all Caddy HTTP servers. Scans every route in every server block and extracts unique hostname values from host matchers. Useful for a quick overview of what domains Caddy is serving and which server block each belongs to."""
     try:
@@ -2327,6 +2350,8 @@ async def add_cache_headers_route(
         return {"error": "host must not be empty", "tool": "add_cache_headers_route"}
     if not path_pattern or not path_pattern.strip():
         return {"error": "path_pattern must not be empty", "tool": "add_cache_headers_route"}
+    if not path_pattern.strip().startswith("/"):
+        return {"error": "path_pattern must start with '/' (e.g. '/static/*', '/assets/*.css')", "tool": "add_cache_headers_route"}
     if max_age < 0:
         return {"error": "max_age must be >= 0", "tool": "add_cache_headers_route"}
     cc_value = f"public, max-age={max_age}"
