@@ -412,6 +412,26 @@ async def delete_config_path(config_path: str) -> dict:
 
 
 @mcp.tool()
+async def create_server(name: str, listen_addresses: str) -> dict:
+    """Create a new Caddy HTTP server block. name: server identifier used in other tools (e.g., 'srv1'). listen_addresses: comma-separated bind addresses (e.g., ':80' or ':80,:443' or '0.0.0.0:8080'). The new server starts with no routes — use add_reverse_proxy_route or similar to add routes."""
+    if not name or not name.strip():
+        return {"error": "name must not be empty", "tool": "create_server"}
+    if not listen_addresses or not listen_addresses.strip():
+        return {"error": "listen_addresses must not be empty", "tool": "create_server"}
+    listen = [a.strip() for a in listen_addresses.split(",") if a.strip()]
+    try:
+        resp = await _request(
+            "PATCH",
+            f"/config/apps/http/servers/{name.strip()}",
+            json={"listen": listen, "routes": []},
+        )
+        resp.raise_for_status()
+        return {"result": {"created": True, "name": name.strip(), "listen": listen}}
+    except Exception as e:
+        return _err(e, "create_server")
+
+
+@mcp.tool()
 async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> dict:
     """Add a TLS automation policy for one or more domains. subjects: comma-separated domain names (e.g., 'example.com,*.example.com'). ca_url: ACME CA directory URL (defaults to Let's Encrypt if empty). email: ACME account email. Appends to existing TLS policies."""
     if not subjects or not subjects.strip():
@@ -444,9 +464,18 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
         policies = tls_automation.get("policies", [])
         policies.append(policy)
 
-        patch_val = {"policies": policies}
-        patch_resp = await _request("PATCH", "/config/apps/tls/automation", json=patch_val)
-        patch_resp.raise_for_status()
+        # PATCH /config/apps/tls/automation — works if TLS app exists.
+        # If TLS section absent, create the full structure at /config/apps/tls.
+        try:
+            patch_resp = await _request("PATCH", "/config/apps/tls/automation", json={"policies": policies})
+            patch_resp.raise_for_status()
+        except httpx.HTTPStatusError as patch_err:
+            if patch_err.response.status_code in {400, 404}:
+                tls_app = {"automation": {"policies": policies}}
+                create_resp = await _request("PATCH", "/config/apps/tls", json=tls_app)
+                create_resp.raise_for_status()
+            else:
+                raise
         return {"result": {"added": True, "subjects": subject_list, "issuer_module": issuer["module"]}}
     except Exception as e:
         return _err(e, "add_tls_policy")
