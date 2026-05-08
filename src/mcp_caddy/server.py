@@ -163,6 +163,8 @@ async def reload(source: str) -> dict:
         if source.lstrip().startswith("{"):
             config_data = json.loads(source)
         else:
+            if not os.path.exists(source):
+                return {"error": f"Config file not found: {source}", "tool": "reload"}
             with open(source) as f:
                 config_data = json.load(f)
 
@@ -171,6 +173,21 @@ async def reload(source: str) -> dict:
         return {"result": {"reloaded": True}}
     except Exception as e:
         return {"error": str(e), "tool": "reload", "detail": type(e).__name__}
+
+
+@mcp.tool()
+async def update_config_path(config_path: str, value: str) -> dict:
+    """Update a specific Caddy config path with a new value via PATCH. config_path: e.g. '/apps/http/servers/srv0/listen'. value: JSON string of the new value."""
+    try:
+        new_value = json.loads(value)
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON value: {e}", "tool": "update_config_path"}
+    try:
+        resp = await _request("PATCH", f"/config{config_path}", json=new_value)
+        resp.raise_for_status()
+        return {"result": {"updated": True, "path": config_path}}
+    except Exception as e:
+        return {"error": str(e), "tool": "update_config_path", "detail": type(e).__name__}
 
 
 def main() -> None:
