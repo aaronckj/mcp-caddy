@@ -508,6 +508,34 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
 
 
 @mcp.tool()
+async def list_tls_policies() -> dict:
+    """List all TLS automation policies configured in Caddy, including subjects and ACME issuer details. Returns empty list if no policies configured."""
+    try:
+        resp = await _request("GET", "/config/apps/tls/automation/policies")
+        resp.raise_for_status()
+        return {"result": resp.json() or []}
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return {"result": []}
+        return _err(e, "list_tls_policies")
+    except Exception as e:
+        return _err(e, "list_tls_policies")
+
+
+@mcp.tool()
+async def delete_tls_policy(policy_index: int) -> dict:
+    """Delete a TLS automation policy by its 0-based index. Use list_tls_policies to see indices. Changes take effect immediately."""
+    if policy_index < 0:
+        return {"error": "policy_index must be >= 0", "tool": "delete_tls_policy"}
+    try:
+        resp = await _request("DELETE", f"/config/apps/tls/automation/policies/{policy_index}")
+        resp.raise_for_status()
+        return {"result": {"deleted": True, "index": policy_index}}
+    except Exception as e:
+        return _err(e, "delete_tls_policy")
+
+
+@mcp.tool()
 async def update_route(server_name: str, route_index: int, config_json: str) -> dict:
     """Replace a route in-place by index. config_json: full route JSON object. Use get_route to retrieve the current config, modify it, then pass it here. Changes take effect immediately."""
     if not server_name or not server_name.strip():
