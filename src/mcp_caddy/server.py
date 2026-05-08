@@ -2970,7 +2970,7 @@ async def add_cookie_match_route(
             resp.raise_for_status()
             server_name = next(iter(resp.json() or {}), "srv0")
         route = {
-            "match": [{"host": [host.strip()], "header_regexp": {"Cookie": {"pattern": f"(?:^|;\\s*){re.escape(cookie_name.strip())}={re.escape(cookie_value.strip())}(?:;|$)"}}}],
+            "match": [{"host": [host.strip()], "header_regexp": {"Cookie": f"(?:^|;\\s*){re.escape(cookie_name.strip())}={re.escape(cookie_value.strip())}(?:;|$)"}}],
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
