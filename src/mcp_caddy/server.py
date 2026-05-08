@@ -2350,6 +2350,36 @@ async def add_query_match_route(
         return _err(e, "add_query_match_route")
 
 
+@mcp.tool()
+async def add_request_body_limit(
+    host: str,
+    max_size_bytes: int,
+    server_name: str = "",
+) -> dict:
+    """Add a request body size limit for a host. Requests with bodies exceeding max_size_bytes will be rejected with 413 Payload Too Large before reaching the upstream. Useful for protecting API endpoints from oversized uploads. Inserted at index 0 so it applies before other routes. Common values: 1048576 (1MB), 10485760 (10MB), 104857600 (100MB)."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_request_body_limit"}
+    if max_size_bytes <= 0:
+        return {"error": "max_size_bytes must be greater than 0", "tool": "add_request_body_limit"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "request_body", "max_size": max_size_bytes}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.insert(0, route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "max_size_bytes": max_size_bytes, "route_index": 0}}
+    except Exception as e:
+        return _err(e, "add_request_body_limit")
+
+
 def main() -> None:
     mcp.run()
 
