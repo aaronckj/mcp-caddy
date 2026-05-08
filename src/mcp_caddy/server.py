@@ -133,9 +133,8 @@ async def create_server(server_name: str, listen: str = ":443") -> dict:
     listen_addrs = [a.strip() for a in listen.split(",") if a.strip()]
     if not listen_addrs:
         return {"error": "listen must not be empty", "tool": "create_server"}
-    import re as _re_ls
     for addr in listen_addrs:
-        if not _re_ls.match(r'^(.*):(\d{1,5})$', addr):
+        if not re.match(r'^(.*):(\d{1,5})$', addr):
             return {"error": f"Invalid listen address '{addr}': must be host:port or :port (e.g. ':443', '0.0.0.0:80')", "tool": "create_server"}
         port_str = addr.rsplit(":", 1)[-1]
         if not (1 <= int(port_str) <= 65535):
@@ -603,16 +602,8 @@ async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> di
     }
 
     try:
-        resp = await _request("GET", "/config/")
-        resp.raise_for_status()
-        config = resp.json() or {}
-
-        tls_automation = (
-            config.get("apps", {})
-            .get("tls", {})
-            .get("automation", {})
-        )
-        policies = tls_automation.get("policies", [])
+        pol_resp = await _request("GET", "/config/apps/tls/automation/policies")
+        policies = (pol_resp.json() or []) if pol_resp.status_code == 200 else []
         policies.append(policy)
 
         # PATCH /config/apps/tls/automation — works if TLS app exists.
