@@ -120,8 +120,10 @@ async def list_routes() -> dict:
             listen = server.get("listen", [])
             for idx, route in enumerate(server.get("routes", [])):
                 hosts = []
+                paths = []
                 for match in route.get("match", []):
                     hosts.extend(match.get("host", []))
+                    paths.extend(match.get("path", []))
 
                 handles = route.get("handle", [])
                 handler_type = handles[0].get("handler") if handles else None
@@ -132,6 +134,7 @@ async def list_routes() -> dict:
                     "index": idx,
                     "listen": listen,
                     "hosts": hosts,
+                    "paths": paths,
                     "handler": handler_type,
                     "upstreams": upstreams,
                 })
@@ -406,6 +409,47 @@ async def delete_config_path(config_path: str) -> dict:
     except Exception as e:
         return _err(e, "delete_config_path")
 
+
+
+@mcp.tool()
+async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> dict:
+    """Add a TLS automation policy for one or more domains. subjects: comma-separated domain names (e.g., 'example.com,*.example.com'). ca_url: ACME CA directory URL (defaults to Let's Encrypt if empty). email: ACME account email. Appends to existing TLS policies."""
+    if not subjects or not subjects.strip():
+        return {"error": "subjects must not be empty", "tool": "add_tls_policy"}
+    subject_list = [s.strip() for s in subjects.split(",") if s.strip()]
+    if not subject_list:
+        return {"error": "subjects must contain at least one domain", "tool": "add_tls_policy"}
+
+    issuer: dict = {"module": "acme"}
+    if ca_url and ca_url.strip():
+        issuer["ca"] = ca_url.strip()
+    if email and email.strip():
+        issuer["email"] = email.strip()
+
+    policy = {
+        "subjects": subject_list,
+        "issuers": [issuer],
+    }
+
+    try:
+        resp = await _request("GET", "/config/")
+        resp.raise_for_status()
+        config = resp.json() or {}
+
+        tls_automation = (
+            config.get("apps", {})
+            .get("tls", {})
+            .get("automation", {})
+        )
+        policies = tls_automation.get("policies", [])
+        policies.append(policy)
+
+        patch_val = {"policies": policies}
+        patch_resp = await _request("PATCH", "/config/apps/tls/automation", json=patch_val)
+        patch_resp.raise_for_status()
+        return {"result": {"added": True, "subjects": subject_list, "issuer_module": issuer["module"]}}
+    except Exception as e:
+        return _err(e, "add_tls_policy")
 
 def main() -> None:
     mcp.run()
