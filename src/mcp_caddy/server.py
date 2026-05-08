@@ -1196,7 +1196,9 @@ async def add_cors_route(
             }
         }
     except Exception as e:
-        return _err(e, "add_cors_route")
+        err = _err(e, "add_cors_route")
+        err["host"] = host
+        return err
 
 
 @mcp.tool()
@@ -1422,7 +1424,10 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
         resp.raise_for_status()
         return {"result": {"added": True, "host": host, "upstreams": upstream_list, "lb_policy": lb_policy, "server": server_name}}
     except Exception as e:
-        err = _err(e, "add_load_balanced_route"); err["host"] = host; return err
+        err = _err(e, "add_load_balanced_route")
+        err["host"] = host
+        err["upstreams"] = upstream_list
+        return err
 
 
 @mcp.tool()
@@ -2791,7 +2796,10 @@ async def add_active_health_check_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "upstream": upstream, "health_path": health_path, "interval": interval, "route_index": len(routes) - 1}}
     except Exception as e:
-        return _err(e, "add_active_health_check_route")
+        err = _err(e, "add_active_health_check_route")
+        err["host"] = host
+        err["upstream"] = upstream
+        return err
 
 
 @mcp.tool()
@@ -2841,7 +2849,9 @@ async def add_ip_denylist_route(
         put_resp.raise_for_status()
         return {"result": {"server": server_name, "host": host, "blocked_cidrs": cidr_list, "upstream": upstream or "(none)", "routes_added": len(new_routes)}}
     except Exception as e:
-        return _err(e, "add_ip_denylist_route")
+        err = _err(e, "add_ip_denylist_route")
+        err["host"] = host
+        return err
 
 
 def main() -> None:
