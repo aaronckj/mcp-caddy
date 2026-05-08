@@ -1398,8 +1398,7 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
         else:
             get_resp.raise_for_status()
             routes = get_resp.json() or []
-        routes.append(route)
-        routes.append(deny_route)
+        routes = [route, deny_route] + routes  # prepend so IP filter fires before existing host routes
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
         return {
@@ -1408,8 +1407,8 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
                 "upstream": upstream,
                 "allowed_ips": ip_list,
                 "server": server_name,
-                "allow_route_index": len(routes) - 2,
-                "deny_route_index": len(routes) - 1,
+                "allow_route_index": 0,
+                "deny_route_index": 1,
             }
         }
     except Exception as e:
@@ -2189,6 +2188,9 @@ async def add_error_handler_route(
             resp.raise_for_status()
             server_name = next(iter(resp.json() or {}), "srv0")
         codes = [c.strip() for c in status_codes.split(",") if c.strip()]
+        for _code in codes:
+            if not (_code.isdigit() and len(_code) == 3 and 100 <= int(_code) <= 599):
+                return {"error": f"Invalid status code '{_code}': must be a 3-digit integer 100-599 (e.g. '404,500')", "tool": "add_error_handler_route"}
         error_route = {
             "match": [{"host": [host.strip()]}],
             "handle": [{"handler": "subroute", "routes": [{
@@ -2391,7 +2393,7 @@ async def add_response_set_header_route(
     if not headers or not headers.strip():
         return {"error": "headers must not be empty", "tool": "add_response_set_header_route"}
     set_map: dict = {}
-    for raw in re.split(r"[;\n]+", headers):
+    for raw in headers.splitlines():
         raw = raw.strip()
         if not raw:
             continue
