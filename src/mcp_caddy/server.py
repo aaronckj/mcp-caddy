@@ -60,6 +60,8 @@ async def get_config() -> dict:
 @mcp.tool()
 async def get_config_path(config_path: str) -> dict:
     """Get a specific Caddy config node by path. config_path: e.g. '/apps/http/servers' or '/apps/tls'."""
+    if not config_path or not config_path.strip():
+        return {"error": "config_path must not be empty", "tool": "get_config_path"}
     config_path = config_path.strip()
     if not config_path.startswith("/"):
         return {"error": "config_path must start with '/'", "tool": "get_config_path"}
@@ -462,6 +464,10 @@ async def reload(source: str = "") -> dict:
 @mcp.tool()
 async def update_config_path(config_path: str, value: str) -> dict:
     """Update a specific Caddy config path with a new value via PATCH. config_path: e.g. '/apps/http/servers/srv0/listen'. value: JSON string of the new value."""
+    if not config_path or not config_path.strip():
+        return {"error": "config_path must not be empty", "tool": "update_config_path"}
+    if not value or not value.strip():
+        return {"error": "value must not be empty", "tool": "update_config_path"}
     config_path = config_path.strip()
     if not config_path.startswith("/"):
         return {"error": "config_path must start with '/'", "tool": "update_config_path"}
@@ -480,6 +486,8 @@ async def update_config_path(config_path: str, value: str) -> dict:
 @mcp.tool()
 async def delete_config_path(config_path: str) -> dict:
     """Delete a specific Caddy config node at the given path. config_path: e.g. '/apps/http/servers/srv0'. Changes take effect immediately."""
+    if not config_path or not config_path.strip():
+        return {"error": "config_path must not be empty", "tool": "delete_config_path"}
     config_path = config_path.strip()
     if not config_path.startswith("/"):
         return {"error": "config_path must start with '/'", "tool": "delete_config_path"}
@@ -926,20 +934,27 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
 @mcp.tool()
 async def add_cors_route(
     host: str,
+    upstream: str = "",
     allow_origins: str = "*",
     allow_methods: str = "GET,POST,PUT,DELETE,OPTIONS",
     allow_headers: str = "Content-Type,Authorization",
     max_age: int = 3600,
     server_name: str = "",
 ) -> dict:
-    """Add a CORS (Cross-Origin Resource Sharing) route for a host. Sets Access-Control-Allow-Origin, Access-Control-Allow-Methods, Access-Control-Allow-Headers, and Access-Control-Max-Age response headers. host: domain to match. allow_origins: comma-separated origins or '*'. allow_methods: comma-separated HTTP methods. allow_headers: comma-separated header names. max_age: preflight cache seconds. server_name: auto-detects first server if empty."""
+    """Add a CORS route for a host. If upstream is provided, creates a complete CORS proxy route: OPTIONS preflight returns 200 with CORS headers, all other methods are proxied to upstream with CORS headers on the response. If upstream is omitted, adds a headers-only overlay (useful for static file servers already configured separately). host: domain to match. upstream: backend address (e.g. 'localhost:3000'). allow_origins: comma-separated origins or '*'. allow_methods: comma-separated HTTP methods. allow_headers: comma-separated header names. max_age: preflight cache seconds."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_cors_route"}
     host = host.strip()
     origins = allow_origins.strip() or "*"
     methods = allow_methods.strip() or "GET,POST,PUT,DELETE,OPTIONS"
-    headers = allow_headers.strip() or "Content-Type,Authorization"
+    hdrs = allow_headers.strip() or "Content-Type,Authorization"
     max_age = max(0, max_age)
+    cors_headers = {
+        "Access-Control-Allow-Origin": [origins],
+        "Access-Control-Allow-Methods": [methods],
+        "Access-Control-Allow-Headers": [hdrs],
+        "Access-Control-Max-Age": [str(max_age)],
+    }
     try:
         if not server_name:
             resp = await _request("GET", "/config/")
@@ -949,29 +964,48 @@ async def add_cors_route(
             if not servers:
                 return {"error": "No HTTP servers configured in Caddy", "tool": "add_cors_route"}
             server_name = next(iter(servers))
-        route = {
-            "match": [{"host": [host]}],
-            "handle": [{
-                "handler": "headers",
-                "response": {
-                    "set": {
-                        "Access-Control-Allow-Origin": [origins],
-                        "Access-Control-Allow-Methods": [methods],
-                        "Access-Control-Allow-Headers": [headers],
-                        "Access-Control-Max-Age": [str(max_age)],
-                    }
-                },
-            }],
-        }
+
+        if upstream and upstream.strip():
+            upstream = upstream.strip()
+            # Full CORS proxy: OPTIONS preflight + proxied requests with CORS headers
+            route = {
+                "match": [{"host": [host]}],
+                "handle": [{
+                    "handler": "subroute",
+                    "routes": [
+                        {
+                            "match": [{"method": ["OPTIONS"]}],
+                            "handle": [
+                                {"handler": "headers", "response": {"set": cors_headers}},
+                                {"handler": "static_response", "status_code": 200},
+                            ],
+                        },
+                        {
+                            "handle": [
+                                {"handler": "headers", "response": {"set": cors_headers}},
+                                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
+                            ],
+                        },
+                    ],
+                }],
+            }
+        else:
+            # Headers-only overlay (for use with separately configured proxy/static routes)
+            route = {
+                "match": [{"host": [host]}],
+                "handle": [{"handler": "headers", "response": {"set": cors_headers}}],
+            }
+
         resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
         resp.raise_for_status()
         return {
             "result": {
                 "added": True,
                 "host": host,
+                "upstream": upstream.strip() if upstream else None,
                 "allow_origins": origins,
                 "allow_methods": methods,
-                "allow_headers": headers,
+                "allow_headers": hdrs,
                 "max_age": max_age,
                 "server": server_name,
             }
