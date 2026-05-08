@@ -376,8 +376,8 @@ async def add_redirect(from_host: str, to_url: str, status_code: int = 301, serv
             "match": [{"host": [from_host]}],
             "handle": [{
                 "handler": "static_response",
-                "status_code": status_code,
-                "headers": {"Location": [to_url]},
+                "status_code": str(status_code),
+                "headers": {"Location": to_url},
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
@@ -798,8 +798,8 @@ async def add_https_redirect(host: str, http_server_name: str = "") -> dict:
             "match": [{"host": [host]}],
             "handle": [{
                 "handler": "static_response",
-                "status_code": 301,
-                "headers": {"Location": ["https://{http.request.host}{http.request.uri}"]},
+                "status_code": "301",
+                "headers": {"Location": "https://{http.request.host}{http.request.uri}"},
             }],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{target_server}/routes")
@@ -1017,7 +1017,7 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
         proxy_handler = (
             {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}
             if upstream and upstream.strip()
-            else {"handler": "static_response", "status_code": 200, "body": "Authenticated"}
+            else {"handler": "static_response", "status_code": "200", "body": "Authenticated"}
         )
         route = {
             "match": [{"host": [host.strip()]}],
@@ -1142,7 +1142,7 @@ async def add_compress_route(host: str, server_name: str = "", algorithms: str =
         encodings = {a: {} for a in algo_list}
         route = {
             "match": [{"host": [host]}],
-            "handle": [{"handler": "encode", "encodings": encodings, "prefer": algo_list}],
+            "handle": [{"handler": "encode", "encodings": encodings}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         if get_resp.status_code == 404:
@@ -1266,7 +1266,7 @@ async def add_cors_route(
                             "match": [{"method": ["OPTIONS"]}],
                             "handle": [
                                 {"handler": "headers", "response": {"set": cors_headers}},
-                                {"handler": "static_response", "status_code": 200},
+                                {"handler": "static_response", "status_code": "200"},
                             ],
                         },
                         {
@@ -1386,10 +1386,11 @@ async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server
         route = {
             "match": [{"host": [host], "remote_ip": {"ranges": ip_list}}],
             "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
+            "terminal": True,
         }
         deny_route = {
             "match": [{"host": [host]}],
-            "handle": [{"handler": "static_response", "status_code": 403}],
+            "handle": [{"handler": "static_response", "status_code": "403"}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         if get_resp.status_code == 404:
@@ -1482,7 +1483,7 @@ async def add_maintenance_route(host: str, message: str = "Service temporarily u
             "match": [{"host": [host]}],
             "handle": [{
                 "handler": "static_response",
-                "status_code": 503,
+                "status_code": "503",
                 "body": message,
                 "headers": {
                     "Content-Type": ["text/plain; charset=utf-8"],
@@ -1499,7 +1500,7 @@ async def add_maintenance_route(host: str, message: str = "Service temporarily u
         routes.append(route)
         put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
         put_resp.raise_for_status()
-        return {"result": {"server": server_name, "host": host, "status_code": 503, "message": message, "route_index": len(routes) - 1}}
+        return {"result": {"server": server_name, "host": host, "status_code": "503", "message": message, "route_index": len(routes) - 1}}
     except Exception as e:
         err = _err(e, "add_maintenance_route"); err["host"] = host; return err
 
@@ -1813,7 +1814,7 @@ async def add_stub_response_route(host: str, body: str = "", status_code: int = 
             if not p.startswith("/"):
                 p = "/" + p
             match_rule["path"] = [p, p + "/*"] if not p.endswith("*") else [p]
-        handler: dict = {"handler": "static_response", "status_code": status_code}
+        handler: dict = {"handler": "static_response", "status_code": str(status_code)}
         if body:
             handler["body"] = body
         if content_type and content_type.strip():
@@ -2048,7 +2049,7 @@ async def add_redirect_route(
             match["path"] = [prefix + "/*", prefix]
         route = {
             "match": [match],
-            "handle": [{"handler": "static_response", "status_code": status_code, "headers": {"Location": [redirect_to]}}],
+            "handle": [{"handler": "static_response", "status_code": str(status_code), "headers": {"Location": redirect_to}}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         if get_resp.status_code == 404:
@@ -3172,7 +3173,7 @@ async def add_ip_denylist_route(
             server_name = next(iter(resp.json() or {}), "srv0")
         deny_route = {
             "match": [{"host": [host.strip()], "remote_ip": {"ranges": cidr_list}}],
-            "handle": [{"handler": "static_response", "status_code": 403, "body": "Forbidden"}],
+            "handle": [{"handler": "static_response", "status_code": "403", "body": "Forbidden"}],
         }
         new_routes = [deny_route]
         if upstream and upstream.strip():
