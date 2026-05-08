@@ -517,29 +517,6 @@ async def delete_config_path(config_path: str) -> dict:
         return _err(e, "delete_config_path")
 
 
-
-@mcp.tool()
-async def create_server(name: str, listen_addresses: str) -> dict:
-    """Create a new Caddy HTTP server block. name: server identifier used in other tools (e.g., 'srv1'). listen_addresses: comma-separated bind addresses (e.g., ':80' or ':80,:443' or '0.0.0.0:8080'). The new server starts with no routes — use add_reverse_proxy_route or similar to add routes."""
-    if not name or not name.strip():
-        return {"error": "name must not be empty", "tool": "create_server"}
-    name = name.strip()
-    if not listen_addresses or not listen_addresses.strip():
-        return {"error": "listen_addresses must not be empty", "tool": "create_server"}
-    listen_addresses = listen_addresses.strip()
-    listen = [a.strip() for a in listen_addresses.split(",") if a.strip()]
-    try:
-        resp = await _request(
-            "PATCH",
-            f"/config/apps/http/servers/{name}",
-            json={"listen": listen, "routes": []},
-        )
-        resp.raise_for_status()
-        return {"result": {"created": True, "name": name, "listen": listen}}
-    except Exception as e:
-        return _err(e, "create_server")
-
-
 @mcp.tool()
 async def add_tls_policy(subjects: str, ca_url: str = "", email: str = "") -> dict:
     """Add a TLS automation policy for one or more domains. subjects: comma-separated domain names (e.g., 'example.com,*.example.com'). ca_url: ACME CA directory URL (defaults to Let's Encrypt if empty). email: ACME account email. Appends to existing TLS policies."""
@@ -744,8 +721,7 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
         return {"error": "new_upstream must not be empty", "tool": "update_upstream"}
     new_upstream = new_upstream.strip()
     try:
-        sn = server_name
-        resp = await _request("GET", f"/config/apps/http/servers/{sn}/routes/{route_index}")
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
         resp.raise_for_status()
         route = resp.json()
 
@@ -761,17 +737,17 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
                             found = True
             return found
 
-        modified = _patch_upstreams(route.get("handle", []), new_upstream.strip())
+        modified = _patch_upstreams(route.get("handle", []), new_upstream)
         if not modified:
             return {"error": f"Route {route_index} has no reverse_proxy handler; use update_route for other handler types", "tool": "update_upstream"}
 
         patch_resp = await _request(
             "PATCH",
-            f"/config/apps/http/servers/{sn}/routes/{route_index}",
+            f"/config/apps/http/servers/{server_name}/routes/{route_index}",
             json=route,
         )
         patch_resp.raise_for_status()
-        return {"result": {"updated": True, "server": sn, "route_index": route_index, "upstream": new_upstream.strip()}}
+        return {"result": {"updated": True, "server": server_name, "route_index": route_index, "upstream": new_upstream}}
     except Exception as e:
         return _err(e, "update_upstream")
 
