@@ -322,7 +322,7 @@ async def add_header_route(host: str, header_name: str, header_value: str, serve
         return {"error": "host must not be empty", "tool": "add_header_route"}
     if not header_name or not header_name.strip():
         return {"error": "header_name must not be empty", "tool": "add_header_route"}
-    if not header_value:
+    if not header_value or not header_value.strip():
         return {"error": "header_value must not be empty", "tool": "add_header_route"}
     try:
         if not server_name:
@@ -869,7 +869,7 @@ async def add_request_header_route(host: str, header_name: str, header_value: st
         return {"error": "host must not be empty", "tool": "add_request_header_route"}
     if not header_name or not header_name.strip():
         return {"error": "header_name must not be empty", "tool": "add_request_header_route"}
-    if not header_value:
+    if not header_value or not header_value.strip():
         return {"error": "header_value must not be empty", "tool": "add_request_header_route"}
     try:
         if not server_name:
