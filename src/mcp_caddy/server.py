@@ -1978,6 +1978,47 @@ async def add_static_file_route(
 
 
 
+@mcp.tool()
+async def add_response_set_header_route(
+    host: str,
+    headers: str,
+    server_name: str = "",
+) -> dict:
+    """Add a route that sets security or custom response headers for all replies to a given host. Useful for HSTS, X-Frame-Options, CSP, etc. headers: 'Name: Value' pairs separated by newlines or semicolons (e.g. 'Strict-Transport-Security: max-age=31536000; X-Frame-Options: SAMEORIGIN'). Complements add_response_delete_header_route."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_response_set_header_route"}
+    if not headers or not headers.strip():
+        return {"error": "headers must not be empty", "tool": "add_response_set_header_route"}
+    set_map: dict = {}
+    for raw in re.split(r"\n+", headers):
+        raw = raw.strip()
+        if not raw:
+            continue
+        if ":" not in raw:
+            return {"error": f"Invalid header '{raw}': must be 'Name: Value'", "tool": "add_response_set_header_route"}
+        hname, _, hval = raw.partition(":")
+        set_map[hname.strip()] = [hval.strip()]
+    if not set_map:
+        return {"error": "No valid headers parsed", "tool": "add_response_set_header_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "headers", "response": {"set": set_map}}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "set_headers": set_map, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_response_set_header_route")
+
+
 def main() -> None:
     mcp.run()
 
