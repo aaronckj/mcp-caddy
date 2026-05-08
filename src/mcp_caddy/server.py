@@ -2271,6 +2271,49 @@ async def add_header_match_route(
         return _err(e, "add_header_match_route")
 
 
+@mcp.tool()
+async def add_method_match_route(
+    host: str,
+    methods: str,
+    upstream: str,
+    server_name: str = "",
+    path_prefix: str = "",
+) -> dict:
+    """Add a route that only matches specific HTTP methods (e.g. 'GET,POST'), proxying to a different upstream. Useful for routing API writes to one backend and reads to another, or blocking specific methods. methods: comma-separated list (e.g. 'POST,PUT,PATCH,DELETE'). path_prefix: optional path filter (e.g. '/api'). Non-matching requests fall through to other routes. Inserted at index 0 for priority."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_method_match_route"}
+    if not methods or not methods.strip():
+        return {"error": "methods must not be empty", "tool": "add_method_match_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_method_match_route"}
+    method_list = [m.strip().upper() for m in methods.split(",") if m.strip()]
+    if not method_list:
+        return {"error": "methods must contain at least one valid HTTP method", "tool": "add_method_match_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        match: dict = {"host": [host.strip()], "method": method_list}
+        if path_prefix and path_prefix.strip():
+            prefix = path_prefix.strip().rstrip("/")
+            if not prefix.startswith("/"):
+                prefix = "/" + prefix
+            match["path"] = [prefix + "/*", prefix]
+        route = {
+            "match": [match],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
+        routes.insert(0, route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "methods": method_list, "upstream": upstream, "route_index": 0}}
+    except Exception as e:
+        return _err(e, "add_method_match_route")
+
+
 def main() -> None:
     mcp.run()
 
