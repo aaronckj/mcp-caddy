@@ -21,15 +21,29 @@ async def _request(method: str, path: str, **kwargs) -> httpx.Response:
         return await client.request(method, f"{host}{path}", **kwargs)
 
 
+def _err(e: Exception, tool: str) -> dict:
+    out: dict = {"error": str(e), "tool": tool, "detail": type(e).__name__}
+    if isinstance(e, httpx.HTTPStatusError):
+        out["status"] = e.response.status_code
+        try:
+            out["body"] = e.response.json()
+        except Exception:
+            out["body"] = e.response.text[:500]
+    return out
+
+
 @mcp.tool()
 async def server_info() -> dict:
     """Get Caddy server version and list of loaded modules."""
     try:
         resp = await _request("GET", "/")
         resp.raise_for_status()
-        return {"result": resp.json()}
+        try:
+            return {"result": resp.json()}
+        except Exception:
+            return {"result": {"raw": resp.text}}
     except Exception as e:
-        return {"error": str(e), "tool": "server_info", "detail": type(e).__name__}
+        return _err(e, "server_info")
 
 
 @mcp.tool()
@@ -40,7 +54,41 @@ async def get_config() -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return {"error": str(e), "tool": "get_config", "detail": type(e).__name__}
+        return _err(e, "get_config")
+
+
+@mcp.tool()
+async def get_config_path(config_path: str) -> dict:
+    """Get a specific Caddy config node by path. config_path: e.g. '/apps/http/servers' or '/apps/tls'."""
+    if not config_path.startswith("/"):
+        return {"error": "config_path must start with '/'", "tool": "get_config_path"}
+    try:
+        resp = await _request("GET", f"/config{config_path}")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "get_config_path")
+
+
+@mcp.tool()
+async def list_servers() -> dict:
+    """List all Caddy HTTP server blocks with their names, listen addresses, and route counts."""
+    try:
+        resp = await _request("GET", "/config/apps/http/servers")
+        resp.raise_for_status()
+        servers = resp.json() or {}
+        return {
+            "result": [
+                {
+                    "name": name,
+                    "listen": cfg.get("listen", []),
+                    "route_count": len(cfg.get("routes", [])),
+                }
+                for name, cfg in servers.items()
+            ]
+        }
+    except Exception as e:
+        return _err(e, "list_servers")
 
 
 def _extract_upstreams(handles: list) -> list[str]:
@@ -59,7 +107,7 @@ def _extract_upstreams(handles: list) -> list[str]:
 
 @mcp.tool()
 async def list_routes() -> dict:
-    """List all configured routes (virtual hosts) parsed from Caddy's HTTP app config."""
+    """List all configured routes (virtual hosts) with hosts, handler, upstreams, listen addresses, and route index."""
     try:
         resp = await _request("GET", "/config/")
         resp.raise_for_status()
@@ -69,7 +117,8 @@ async def list_routes() -> dict:
         routes_out = []
 
         for server_name, server in servers.items():
-            for route in server.get("routes", []):
+            listen = server.get("listen", [])
+            for idx, route in enumerate(server.get("routes", [])):
                 hosts = []
                 for match in route.get("match", []):
                     hosts.extend(match.get("host", []))
@@ -80,6 +129,8 @@ async def list_routes() -> dict:
 
                 routes_out.append({
                     "server": server_name,
+                    "index": idx,
+                    "listen": listen,
                     "hosts": hosts,
                     "handler": handler_type,
                     "upstreams": upstreams,
@@ -87,7 +138,158 @@ async def list_routes() -> dict:
 
         return {"result": routes_out}
     except Exception as e:
-        return {"error": str(e), "tool": "list_routes", "detail": type(e).__name__}
+        return _err(e, "list_routes")
+
+
+@mcp.tool()
+async def get_route(server_name: str, route_index: int) -> dict:
+    """Get the full configuration of a specific route by index. Use list_routes to find server_name and index."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "get_route"}
+    if route_index < 0:
+        return {"error": "route_index must be >= 0", "tool": "get_route"}
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "get_route")
+
+
+@mcp.tool()
+async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "") -> dict:
+    """Add a host-based reverse proxy route to Caddy. host: domain (e.g. 'app.example.com'). upstream: backend dial address (e.g. 'localhost:3000'). server_name: Caddy server block (auto-detects first server if empty)."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_reverse_proxy_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_reverse_proxy_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {
+                    "error": "No HTTP servers found in Caddy config. Use reload to load an initial configuration first.",
+                    "tool": "add_reverse_proxy_route",
+                }
+            server_name = next(iter(servers))
+
+        route = {
+            "match": [{"host": [host]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "upstream": upstream, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_reverse_proxy_route")
+
+
+@mcp.tool()
+async def add_path_route(path: str, upstream: str, server_name: str = "") -> dict:
+    """Add a path-based reverse proxy route. All requests matching the URL path prefix are proxied to upstream regardless of hostname. path: e.g. '/api/*' or '/v2/*'. upstream: backend address (e.g., 'localhost:8080'). server_name: auto-detects first server if empty."""
+    if not path or not path.strip():
+        return {"error": "path must not be empty", "tool": "add_path_route"}
+    if not upstream or not upstream.strip():
+        return {"error": "upstream must not be empty", "tool": "add_path_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers found in Caddy config. Use reload to load an initial configuration first.", "tool": "add_path_route"}
+            server_name = next(iter(servers))
+
+        route = {
+            "match": [{"path": [path]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "path": path, "upstream": upstream, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_path_route")
+
+
+@mcp.tool()
+async def add_static_file_server(path: str, root: str, server_name: str = "") -> dict:
+    """Add a static file server route to Caddy. path: URL path to match (e.g., '/files/*'). root: filesystem directory to serve. server_name: auto-detects first server if empty."""
+    if not path or not path.strip():
+        return {"error": "path must not be empty", "tool": "add_static_file_server"}
+    if not root or not root.strip():
+        return {"error": "root must not be empty", "tool": "add_static_file_server"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_static_file_server"}
+            server_name = next(iter(servers))
+
+        route = {
+            "match": [{"path": [path]}],
+            "handle": [{"handler": "file_server", "root": root}],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "server": server_name, "path": path, "root": root}}
+    except Exception as e:
+        return _err(e, "add_static_file_server")
+
+
+@mcp.tool()
+async def add_redirect(from_host: str, to_url: str, status_code: int = 301, server_name: str = "") -> dict:
+    """Add an HTTP redirect route. from_host: domain to redirect (e.g. 'old.example.com'). to_url: destination URL. status_code: 301 (permanent), 302 (temporary), 307, or 308."""
+    if not from_host or not from_host.strip():
+        return {"error": "from_host must not be empty", "tool": "add_redirect"}
+    if not to_url or not to_url.strip():
+        return {"error": "to_url must not be empty", "tool": "add_redirect"}
+    if status_code not in {301, 302, 307, 308}:
+        return {"error": "status_code must be 301, 302, 307, or 308", "tool": "add_redirect"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_redirect"}
+            server_name = next(iter(servers))
+
+        route = {
+            "match": [{"host": [from_host]}],
+            "handle": [{
+                "handler": "static_response",
+                "status_code": status_code,
+                "headers": {"Location": [to_url]},
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "from": from_host, "to": to_url, "status_code": status_code, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_redirect")
+
+
+@mcp.tool()
+async def delete_route(server_name: str, route_index: int) -> dict:
+    """Delete a route by index from an HTTP server's route list. Use list_routes to find the index. Changes take effect immediately."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "delete_route"}
+    if route_index < 0:
+        return {"error": "route_index must be >= 0", "tool": "delete_route"}
+    try:
+        resp = await _request("DELETE", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
+        resp.raise_for_status()
+        return {"result": {"server_name": server_name, "route_index": route_index, "deleted": True}}
+    except Exception as e:
+        return _err(e, "delete_route")
 
 
 @mcp.tool()
@@ -98,7 +300,7 @@ async def list_upstreams() -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return {"error": str(e), "tool": "list_upstreams", "detail": type(e).__name__}
+        return _err(e, "list_upstreams")
 
 
 @mcp.tool()
@@ -134,7 +336,7 @@ async def get_certificates() -> dict:
 
         return {"result": certs}
     except Exception as e:
-        return {"error": str(e), "tool": "get_certificates", "detail": type(e).__name__}
+        return _err(e, "get_certificates")
 
 
 @mcp.tool()
@@ -153,7 +355,7 @@ async def adapt_config(caddyfile: str) -> dict:
         resp.raise_for_status()
         return {"result": resp.json()}
     except Exception as e:
-        return {"error": str(e), "tool": "adapt_config", "detail": type(e).__name__}
+        return _err(e, "adapt_config")
 
 
 @mcp.tool()
@@ -163,6 +365,8 @@ async def reload(source: str) -> dict:
         if source.lstrip().startswith("{"):
             config_data = json.loads(source)
         else:
+            if not os.path.exists(source):
+                return {"error": f"Config file not found: {source}", "tool": "reload"}
             with open(source) as f:
                 config_data = json.load(f)
 
@@ -170,7 +374,37 @@ async def reload(source: str) -> dict:
         resp.raise_for_status()
         return {"result": {"reloaded": True}}
     except Exception as e:
-        return {"error": str(e), "tool": "reload", "detail": type(e).__name__}
+        return _err(e, "reload")
+
+
+@mcp.tool()
+async def update_config_path(config_path: str, value: str) -> dict:
+    """Update a specific Caddy config path with a new value via PATCH. config_path: e.g. '/apps/http/servers/srv0/listen'. value: JSON string of the new value."""
+    if not config_path.startswith("/"):
+        return {"error": "config_path must start with '/'", "tool": "update_config_path"}
+    try:
+        new_value = json.loads(value)
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON value: {e}", "tool": "update_config_path"}
+    try:
+        resp = await _request("PATCH", f"/config{config_path}", json=new_value)
+        resp.raise_for_status()
+        return {"result": {"updated": True, "path": config_path}}
+    except Exception as e:
+        return _err(e, "update_config_path")
+
+
+@mcp.tool()
+async def delete_config_path(config_path: str) -> dict:
+    """Delete a specific Caddy config node at the given path. config_path: e.g. '/apps/http/servers/srv0'. Changes take effect immediately."""
+    if not config_path.startswith("/"):
+        return {"error": "config_path must start with '/'", "tool": "delete_config_path"}
+    try:
+        resp = await _request("DELETE", f"/config{config_path}")
+        resp.raise_for_status()
+        return {"result": {"deleted": True, "path": config_path}}
+    except Exception as e:
+        return _err(e, "delete_config_path")
 
 
 def main() -> None:
