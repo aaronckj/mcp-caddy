@@ -226,7 +226,7 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
                 match_rule["path"] = [p]
         handler: dict = {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}
         if health_path and health_path.strip():
-            handler["health_checks"] = {"active": {"path": health_path.strip()}}
+            handler["health_checks"] = {"active": {"uri": health_path.strip()}}
             if health_interval and health_interval.strip():
                 handler["health_checks"]["active"]["interval"] = health_interval.strip()
         route = {
@@ -1301,6 +1301,45 @@ async def add_maintenance_route(host: str, message: str = "Service temporarily u
         return {"result": {"added": True, "host": host, "status_code": 503, "server": server_name, "message": message}}
     except Exception as e:
         return _err(e, "add_maintenance_route")
+
+
+@mcp.tool()
+async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "round_robin", server_name: str = "") -> dict:
+    """Add a reverse proxy route with load balancing across multiple backends. host: domain to match. upstreams: comma-separated backend addresses (e.g. 'host1:8080,host2:8080,host3:8080'). lb_policy: round_robin (default), least_conn, ip_hash, first, random, random_choose, cookie. server_name: auto-detects first server if empty."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_load_balanced_route"}
+    host = host.strip()
+    if not upstreams or not upstreams.strip():
+        return {"error": "upstreams must not be empty", "tool": "add_load_balanced_route"}
+    upstream_list = [u.strip() for u in upstreams.split(",") if u.strip()]
+    if len(upstream_list) < 2:
+        return {"error": "add_load_balanced_route requires at least 2 upstreams. Use add_reverse_proxy_route for a single backend.", "tool": "add_load_balanced_route"}
+    _VALID_POLICIES = {"round_robin", "least_conn", "ip_hash", "first", "random", "random_choose", "cookie"}
+    lb_policy = lb_policy.strip().lower()
+    if lb_policy not in _VALID_POLICIES:
+        return {"error": f"Invalid lb_policy '{lb_policy}'. Valid: {', '.join(sorted(_VALID_POLICIES))}", "tool": "add_load_balanced_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/")
+            resp.raise_for_status()
+            config = resp.json() or {}
+            servers = config.get("apps", {}).get("http", {}).get("servers", {})
+            if not servers:
+                return {"error": "No HTTP servers configured in Caddy", "tool": "add_load_balanced_route"}
+            server_name = next(iter(servers))
+        route = {
+            "match": [{"host": [host]}],
+            "handle": [{
+                "handler": "reverse_proxy",
+                "upstreams": [{"dial": u} for u in upstream_list],
+                "load_balancing": {"selection_policy": {"policy": lb_policy}},
+            }],
+        }
+        resp = await _request("POST", f"/config/apps/http/servers/{server_name}/routes", json=route)
+        resp.raise_for_status()
+        return {"result": {"added": True, "host": host, "upstreams": upstream_list, "lb_policy": lb_policy, "server": server_name}}
+    except Exception as e:
+        return _err(e, "add_load_balanced_route")
 
 
 @mcp.tool()
