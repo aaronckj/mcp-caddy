@@ -1821,6 +1821,60 @@ async def get_metrics() -> dict:
         return _err(e, "get_metrics")
 
 
+@mcp.tool()
+async def add_error_handler_route(
+    host: str,
+    status_codes: str,
+    body: str = "",
+    content_type: str = "text/html; charset=utf-8",
+    server_name: str = "",
+) -> dict:
+    """Add a custom error handler route for specific HTTP status codes. status_codes: comma-separated codes (e.g. '404,500') or ranges (e.g. '5xx'). body: HTML/text body for the error response. Caddy invokes error handlers when upstream returns matching status codes."""
+    if not host or not host.strip():
+        return {"error": "host must not be empty", "tool": "add_error_handler_route"}
+    if not status_codes or not status_codes.strip():
+        return {"error": "status_codes must not be empty", "tool": "add_error_handler_route"}
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            server_name = next(iter(resp.json() or {}), "srv0")
+        codes = [c.strip() for c in status_codes.split(",") if c.strip()]
+        error_route = {
+            "match": [{"host": [host.strip()]}],
+            "handle": [{"handler": "subroute", "routes": [{
+                "match": [{"expression": f"{{{{http.error.status_code}}}} in [{', '.join(codes)}]"}],
+                "handle": [{"handler": "static_response", "status_code": "{http.error.status_code}",
+                             "headers": {"Content-Type": [content_type]}, "body": body}],
+            }]}],
+            "terminal": True,
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/errors")
+        if get_resp.status_code == 200:
+            errors_cfg = get_resp.json() or {}
+        else:
+            errors_cfg = {}
+        if "routes" not in errors_cfg:
+            errors_cfg["routes"] = []
+        errors_cfg["routes"].append(error_route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/errors", json=errors_cfg)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "status_codes": codes}}
+    except Exception as e:
+        return _err(e, "add_error_handler_route")
+
+
+@mcp.tool()
+async def get_admin_config() -> dict:
+    """Get Caddy admin API configuration: listen address, TLS settings, and access controls. Useful for verifying the admin endpoint is properly secured."""
+    try:
+        resp = await _request("GET", "/config/admin")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "get_admin_config")
+
+
 def main() -> None:
     mcp.run()
 
