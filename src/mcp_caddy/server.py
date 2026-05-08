@@ -1705,6 +1705,56 @@ async def list_virtual_hosts() -> dict:
         return _err(e, "list_virtual_hosts")
 
 
+@mcp.tool()
+async def add_redirect_route(
+    host: str,
+    target: str = "",
+    status_code: int = 301,
+    path_prefix: str = "",
+    server_name: str = "",
+) -> dict:
+    """Add a redirect route. If target is empty, redirects HTTP → HTTPS (same host, same URI). target: full URL or {scheme}://{host}{uri} template. status_code: 301 (permanent) or 302 (temporary). path_prefix: optional path to restrict redirect scope."""
+    try:
+        if not server_name:
+            resp = await _request("GET", "/config/apps/http/servers")
+            resp.raise_for_status()
+            servers = resp.json() or {}
+            server_name = next(iter(servers), "srv0")
+        redirect_to = target.strip() if target.strip() else "https://{http.request.host}{http.request.uri}"
+        match: dict = {"host": [host]}
+        if path_prefix.strip():
+            match["path"] = [path_prefix.strip().rstrip("/") + "*"]
+        route = {
+            "match": [match],
+            "handle": [{"handler": "static_response", "status_code": str(status_code), "headers": {"Location": [redirect_to]}}],
+        }
+        get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        routes = get_resp.json() or [] if get_resp.status_code == 200 else []
+        routes.append(route)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "host": host, "redirect_to": redirect_to, "status_code": status_code, "route_index": len(routes) - 1}}
+    except Exception as e:
+        return _err(e, "add_redirect_route")
+
+
+@mcp.tool()
+async def delete_route(server_name: str, route_index: int) -> dict:
+    """Delete a route by its zero-based index within a Caddy server's route list. Use list_routes or get_routes_by_host to find the index before deleting. WARNING: indexes shift after deletion."""
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
+        resp.raise_for_status()
+        routes = resp.json() or []
+        if route_index < 0 or route_index >= len(routes):
+            return {"error": f"route_index {route_index} out of range (0–{len(routes) - 1})", "tool": "delete_route"}
+        removed = routes.pop(route_index)
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=routes)
+        put_resp.raise_for_status()
+        return {"result": {"server": server_name, "deleted_index": route_index, "deleted_route": removed, "remaining_routes": len(routes)}}
+    except Exception as e:
+        return _err(e, "delete_route")
+
+
 def main() -> None:
     mcp.run()
 
