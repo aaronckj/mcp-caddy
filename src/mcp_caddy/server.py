@@ -2198,10 +2198,11 @@ async def add_error_handler_route(
             }]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/errors")
-        if get_resp.status_code == 200:
-            errors_cfg = get_resp.json() or {}
-        else:
+        if get_resp.status_code == 404:
             errors_cfg = {}
+        else:
+            get_resp.raise_for_status()
+            errors_cfg = get_resp.json() or {}
         if "routes" not in errors_cfg:
             errors_cfg["routes"] = []
         errors_cfg["routes"].append(error_route)
@@ -3196,10 +3197,10 @@ async def add_ip_denylist_route(
         else:
             get_resp.raise_for_status()
             existing = get_resp.json() or []
-        existing.extend(new_routes)
-        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=existing)
+        new_routes.extend(existing)  # denylist must evaluate before existing host routes
+        put_resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/routes", json=new_routes)
         put_resp.raise_for_status()
-        return {"result": {"server": server_name, "host": host, "blocked_cidrs": cidr_list, "upstream": upstream or "(none)", "routes_added": len(new_routes)}}
+        return {"result": {"server": server_name, "host": host, "blocked_cidrs": cidr_list, "upstream": upstream or "(none)", "routes_added": len(new_routes) - len(existing)}}
     except Exception as e:
         err = _err(e, "add_ip_denylist_route")
         err["host"] = host
