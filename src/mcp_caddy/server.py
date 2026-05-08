@@ -38,7 +38,10 @@ async def server_info() -> dict:
     try:
         resp = await _request("GET", "/")
         resp.raise_for_status()
-        return {"result": resp.json()}
+        try:
+            return {"result": resp.json()}
+        except Exception:
+            return {"result": {"raw": resp.text}}
     except Exception as e:
         return _err(e, "server_info")
 
@@ -136,6 +139,21 @@ async def list_routes() -> dict:
         return {"result": routes_out}
     except Exception as e:
         return _err(e, "list_routes")
+
+
+@mcp.tool()
+async def get_route(server_name: str, route_index: int) -> dict:
+    """Get the full configuration of a specific route by index. Use list_routes to find server_name and index."""
+    if not server_name or not server_name.strip():
+        return {"error": "server_name must not be empty", "tool": "get_route"}
+    if route_index < 0:
+        return {"error": "route_index must be >= 0", "tool": "get_route"}
+    try:
+        resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
+        resp.raise_for_status()
+        return {"result": resp.json()}
+    except Exception as e:
+        return _err(e, "get_route")
 
 
 @mcp.tool()
