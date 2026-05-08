@@ -2318,6 +2318,10 @@ async def add_strip_prefix_route(
         return {"error": "path_prefix must not be empty", "tool": "add_strip_prefix_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_strip_prefix_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_strip_prefix_route"}
     prefix = path_prefix.strip().rstrip("/")
     if not prefix.startswith("/"):
         prefix = "/" + prefix
@@ -2330,7 +2334,7 @@ async def add_strip_prefix_route(
             "match": [{"host": [host.strip()], "path": [prefix + "/*", prefix]}],
             "handle": [
                 {"handler": "rewrite", "strip_path_prefix": prefix},
-                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]},
+                {"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]},
             ],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
@@ -2360,6 +2364,10 @@ async def add_header_match_route(
         return {"error": "header_value must not be empty", "tool": "add_header_match_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_header_match_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_header_match_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2367,7 +2375,7 @@ async def add_header_match_route(
             server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host.strip()], "header": {header_name.strip(): [header_value.strip()]}}],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
@@ -2394,6 +2402,10 @@ async def add_method_match_route(
         return {"error": "methods must not be empty", "tool": "add_method_match_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_method_match_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_method_match_route"}
     method_list = [m.strip().upper() for m in methods.split(",") if m.strip()]
     if not method_list:
         return {"error": "methods must contain at least one valid HTTP method", "tool": "add_method_match_route"}
@@ -2439,6 +2451,10 @@ async def add_query_match_route(
         return {"error": "query_value must not be empty", "tool": "add_query_match_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_query_match_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_query_match_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2446,7 +2462,7 @@ async def add_query_match_route(
             server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host.strip()], "query": {query_param.strip(): [query_value.strip()]}}],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
@@ -2550,6 +2566,10 @@ async def add_cookie_match_route(
         return {"error": "cookie_value must not be empty", "tool": "add_cookie_match_route"}
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_cookie_match_route"}
+    upstream = upstream.strip()
+    err = _validate_upstream_dial(upstream)
+    if err:
+        return {"error": err, "tool": "add_cookie_match_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -2557,7 +2577,7 @@ async def add_cookie_match_route(
             server_name = next(iter(resp.json() or {}), "srv0")
         route = {
             "match": [{"host": [host.strip()], "header_regexp": {"Cookie": {f"(?:^|;\\s*){re.escape(cookie_name.strip())}={re.escape(cookie_value.strip())}(?:;|$)": {}}}}],
-            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+            "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
         }
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
         routes = (get_resp.json() or []) if get_resp.status_code == 200 else []
@@ -2736,9 +2756,13 @@ async def add_ip_denylist_route(
         }
         new_routes = [deny_route]
         if upstream and upstream.strip():
+            upstream = upstream.strip()
+            up_err = _validate_upstream_dial(upstream)
+            if up_err:
+                return {"error": up_err, "tool": "add_ip_denylist_route"}
             allow_route = {
                 "match": [{"host": [host.strip()]}],
-                "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream.strip()}]}],
+                "handle": [{"handler": "reverse_proxy", "upstreams": [{"dial": upstream}]}],
             }
             new_routes.append(allow_route)
         get_resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes")
