@@ -16,11 +16,39 @@ _DEFAULT_HOST = "http://localhost:2019"
 _DEFAULT_TIMEOUT = 30.0
 
 
+def _build_proxy_body(method: str, path: str, **kwargs) -> dict:
+    body: dict = {
+        "service": os.environ.get("VAULT_PROXY_SERVICE", "caddy"),
+        "method": method,
+        "path": path,
+    }
+    if "json" in kwargs:
+        body["body"] = kwargs["json"]
+    if kwargs.get("params"):
+        body["query"] = {k: str(v) for k, v in kwargs["params"].items()}
+    return body
+
+
 async def _request(method: str, path: str, **kwargs) -> httpx.Response:
-    host = os.environ.get("CADDY_HOST", _DEFAULT_HOST)
+    """Route through vaultproxy if VAULT_PROXY_URL is set, else use direct connection with optional Basic auth."""
     timeout = float(os.environ.get("CADDY_TIMEOUT", str(_DEFAULT_TIMEOUT)))
+    proxy_url = os.environ.get("VAULT_PROXY_URL")
+
+    if proxy_url:
+        caller_id = os.environ.get("VAULT_PROXY_CALLER_ID", "mcp-caddy")
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            return await client.post(
+                f"{proxy_url}/proxy",
+                json=_build_proxy_body(method, path, **kwargs),
+                headers={"X-Caller-Id": caller_id},
+            )
+
+    host = os.environ.get("CADDY_HOST", _DEFAULT_HOST)
+    username = os.environ.get("CADDY_USERNAME")
+    password = os.environ.get("CADDY_PASSWORD")
+    auth = (username, password) if username and password else None
     async with httpx.AsyncClient(timeout=timeout) as client:
-        return await client.request(method, f"{host}{path}", **kwargs)
+        return await client.request(method, f"{host}{path}", auth=auth, **kwargs)
 
 
 def _err(e: Exception, tool: str) -> dict:
