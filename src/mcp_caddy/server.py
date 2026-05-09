@@ -2627,9 +2627,8 @@ async def add_retry_route(
             "handle": [{
                 "handler": "reverse_proxy",
                 "upstreams": [{"dial": upstream}],
-                "retries": retries,
                 "load_balancing": {
-                    "retry_match": [{"status_code": [502, 503, 504]}],
+                    "try_duration": f"{retries * 2}s",
                 },
                 "health_checks": {
                     "passive": {
@@ -2919,7 +2918,7 @@ async def enable_server_access_log(
         sink_resp = await _request("PUT", "/config/logging/logs/access", json=log_sink)
         sink_resp.raise_for_status()
         # Step 2: point the server's access log at that named sink
-        server_logs = {"logger_names": {"*": "access"}}
+        server_logs = {"default_logger_name": "access"}
         resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/logs", json=server_logs)
         resp.raise_for_status()
         return {"result": {"server": server_name, "format": format, "output": output_file or "stderr", "enabled": True}}
