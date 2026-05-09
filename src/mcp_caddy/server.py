@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import ipaddress
 import json
 import os
@@ -24,8 +25,13 @@ def _build_proxy_body(method: str, path: str, **kwargs) -> dict:
     }
     if "json" in kwargs:
         body["body"] = kwargs["json"]
+    elif "content" in kwargs:
+        raw = kwargs["content"]
+        body["body"] = raw.decode() if isinstance(raw, bytes) else raw
     if kwargs.get("params"):
         body["query"] = {k: str(v) for k, v in kwargs["params"].items()}
+    if kwargs.get("headers"):
+        body["headers"] = dict(kwargs["headers"])
     return body
 
 
@@ -1992,10 +1998,9 @@ async def add_trusted_proxies(ranges: str = "private_ranges", server_name: str =
             cidr_list = [r.strip() for r in ranges.split(",") if r.strip()]
             if not cidr_list:
                 return {"error": "ranges must contain at least one CIDR or 'private_ranges'", "tool": "add_trusted_proxies"}
-            import ipaddress as _ipa
             for cidr in cidr_list:
                 try:
-                    _ipa.ip_network(cidr, strict=False)
+                    ipaddress.ip_network(cidr, strict=False)
                 except ValueError as ve:
                     return {"error": f"Invalid CIDR '{cidr}': {ve}", "tool": "add_trusted_proxies"}
             trusted = {"source": "static", "ranges": cidr_list}
@@ -2111,7 +2116,6 @@ async def duplicate_route(server_name: str, source_index: int, insert_index: int
         routes = resp.json() or []
         if source_index < 0 or source_index >= len(routes):
             return {"error": f"source_index {source_index} out of range (0–{len(routes) - 1})", "tool": "duplicate_route"}
-        import copy
         duplicate = copy.deepcopy(routes[source_index])
         if insert_index < 0 or insert_index >= len(routes):
             routes.append(duplicate)
