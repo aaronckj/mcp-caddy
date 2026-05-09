@@ -2283,7 +2283,7 @@ async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_p
             "match": [match],
             "handle": [{
                 "handler": "reverse_proxy",
-                "transport": {"protocol": "http", "versions": ["h2c", "2"]},
+                "transport": {"protocol": "http", "versions": ["h2c", "1.1"]},
                 "upstreams": [{"dial": upstream.strip()}],
                 "flush_interval": -1,
             }],
@@ -2911,7 +2911,7 @@ async def enable_server_access_log(
     try:
         encoder: dict = {"format": format}
         if output_file and output_file.strip():
-            writer: dict = {"output": "file", "filename": output_file.strip(), "roll_size_mb": 100, "roll_keep": 10}
+            writer: dict = {"output": "file", "filename": output_file.strip(), "roll_size_megabytes": 100, "roll_keep_days": 14}
         else:
             writer = {"output": "stderr"}
         # Step 1: configure the global named log sink at /config/logging/logs/access
@@ -2919,7 +2919,7 @@ async def enable_server_access_log(
         sink_resp = await _request("PUT", "/config/logging/logs/access", json=log_sink)
         sink_resp.raise_for_status()
         # Step 2: point the server's access log at that named sink
-        server_logs = {"default_logger_name": "access"}
+        server_logs = {"logger_names": {"*": "access"}}
         resp = await _request("PUT", f"/config/apps/http/servers/{server_name}/logs", json=server_logs)
         resp.raise_for_status()
         return {"result": {"server": server_name, "format": format, "output": output_file or "stderr", "enabled": True}}
