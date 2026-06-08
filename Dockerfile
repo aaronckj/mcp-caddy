@@ -9,4 +9,5 @@ COPY src/ ./src/
 
 RUN uv pip install --system .
 
+# mcp-caddy speaks MCP over stdio; there is no HTTP listener to health-check.
 ENTRYPOINT ["mcp-caddy"]

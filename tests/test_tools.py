@@ -13,8 +13,11 @@ import pytest
 # ---------------------------------------------------------------------------
 
 async def test_request_uses_caddy_host_env(monkeypatch):
-    """_request() builds URL from CADDY_HOST env var."""
-    monkeypatch.setenv("CADDY_HOST", "http://10.0.0.31:2019")
+    """_request() builds URL from CADDY_HOST env var (no creds -> auth=None)."""
+    monkeypatch.setenv("CADDY_HOST", "http://caddy.example:2019")
+    monkeypatch.delenv("VAULT_PROXY_URL", raising=False)
+    monkeypatch.delenv("CADDY_USERNAME", raising=False)
+    monkeypatch.delenv("CADDY_PASSWORD", raising=False)
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -31,13 +34,17 @@ async def test_request_uses_caddy_host_env(monkeypatch):
     assert resp.status_code == 200
     mock_client.request.assert_called_once_with(
         "GET",
-        "http://10.0.0.31:2019/config/",
+        "http://caddy.example:2019/config/",
+        auth=None,
     )
 
 
 async def test_request_uses_default_host(monkeypatch):
     """_request() falls back to http://localhost:2019 when CADDY_HOST is not set."""
     monkeypatch.delenv("CADDY_HOST", raising=False)
+    monkeypatch.delenv("VAULT_PROXY_URL", raising=False)
+    monkeypatch.delenv("CADDY_USERNAME", raising=False)
+    monkeypatch.delenv("CADDY_PASSWORD", raising=False)
 
     mock_resp = MagicMock()
     mock_resp.status_code = 200
@@ -51,7 +58,33 @@ async def test_request_uses_default_host(monkeypatch):
         import mcp_caddy.server as srv
         resp = await srv._request("GET", "/")
 
-    mock_client.request.assert_called_once_with("GET", "http://localhost:2019/")
+    mock_client.request.assert_called_once_with(
+        "GET", "http://localhost:2019/", auth=None
+    )
+
+
+async def test_request_uses_basic_auth(monkeypatch):
+    """_request() passes Basic auth when CADDY_USERNAME and CADDY_PASSWORD are set."""
+    monkeypatch.setenv("CADDY_HOST", "http://caddy.example:2019")
+    monkeypatch.delenv("VAULT_PROXY_URL", raising=False)
+    monkeypatch.setenv("CADDY_USERNAME", "admin")
+    monkeypatch.setenv("CADDY_PASSWORD", "secret")
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+    mock_client.request = AsyncMock(return_value=mock_resp)
+
+    with patch("mcp_caddy.server.httpx.AsyncClient", return_value=mock_client):
+        import mcp_caddy.server as srv
+        await srv._request("GET", "/")
+
+    mock_client.request.assert_called_once_with(
+        "GET", "http://caddy.example:2019/", auth=("admin", "secret")
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -142,51 +175,48 @@ async def test_get_config_error(monkeypatch):
 # list_routes
 # ---------------------------------------------------------------------------
 
-_ROUTES_CONFIG = {
-    "apps": {
-        "http": {
-            "servers": {
-                "srv0": {
-                    "listen": [":443"],
-                    "routes": [
-                        {
-                            "match": [{"host": ["example.com"]}],
-                            "handle": [
-                                {
-                                    "handler": "reverse_proxy",
-                                    "upstreams": [{"dial": "10.0.0.5:8080"}],
-                                }
-                            ],
-                        },
-                        {
-                            "match": [{"host": ["api.example.com"]}],
-                            "handle": [
-                                {
-                                    "handler": "subroute",
-                                    "routes": [
-                                        {
-                                            "handle": [
-                                                {
-                                                    "handler": "reverse_proxy",
-                                                    "upstreams": [{"dial": "10.0.0.6:9000"}],
-                                                }
-                                            ]
-                                        }
-                                    ],
-                                }
-                            ],
-                        },
-                    ],
-                }
-            }
-        }
+# list_routes queries GET /config/apps/http/servers, which returns the
+# servers map directly (not the full top-level config).
+_SERVERS_CONFIG = {
+    "srv0": {
+        "listen": [":443"],
+        "routes": [
+            {
+                "match": [{"host": ["example.com"]}],
+                "handle": [
+                    {
+                        "handler": "reverse_proxy",
+                        "upstreams": [{"dial": "localhost:8080"}],
+                    }
+                ],
+            },
+            {
+                "match": [{"host": ["api.example.com"]}],
+                "handle": [
+                    {
+                        "handler": "subroute",
+                        "routes": [
+                            {
+                                "handle": [
+                                    {
+                                        "handler": "reverse_proxy",
+                                        "upstreams": [{"dial": "localhost:9000"}],
+                                    }
+                                ]
+                            }
+                        ],
+                    }
+                ],
+            },
+        ],
     }
 }
 
 
 async def test_list_routes_success(monkeypatch):
     async def fake_request(method, path, **kw):
-        return make_response(200, _ROUTES_CONFIG)
+        assert path == "/config/apps/http/servers"
+        return make_response(200, _SERVERS_CONFIG)
 
     import mcp_caddy.server as srv
     monkeypatch.setattr(srv, "_request", fake_request)
@@ -198,7 +228,7 @@ async def test_list_routes_success(monkeypatch):
 
     first = routes[0]
     assert first["hosts"] == ["example.com"]
-    assert first["upstreams"] == ["10.0.0.5:8080"]
+    assert first["upstreams"] == ["localhost:8080"]
     assert first["handler"] == "reverse_proxy"
     assert first["server"] == "srv0"
 
@@ -206,7 +236,7 @@ async def test_list_routes_success(monkeypatch):
 async def test_list_routes_subroute_upstreams(monkeypatch):
     """Upstreams inside subroute handlers are extracted."""
     async def fake_request(method, path, **kw):
-        return make_response(200, _ROUTES_CONFIG)
+        return make_response(200, _SERVERS_CONFIG)
 
     import mcp_caddy.server as srv
     monkeypatch.setattr(srv, "_request", fake_request)
@@ -214,14 +244,14 @@ async def test_list_routes_subroute_upstreams(monkeypatch):
 
     second = result["result"][1]
     assert second["hosts"] == ["api.example.com"]
-    assert second["upstreams"] == ["10.0.0.6:9000"]
+    assert second["upstreams"] == ["localhost:9000"]
     assert second["handler"] == "subroute"
 
 
-async def test_list_routes_no_http_app(monkeypatch):
-    """Returns empty list when config has no http app."""
+async def test_list_routes_no_servers(monkeypatch):
+    """Returns empty list when there are no HTTP servers configured."""
     async def fake_request(method, path, **kw):
-        return make_response(200, {"apps": {}})
+        return make_response(200, {})
 
     import mcp_caddy.server as srv
     monkeypatch.setattr(srv, "_request", fake_request)
@@ -248,8 +278,8 @@ async def test_list_routes_error(monkeypatch):
 
 async def test_list_upstreams_success(monkeypatch):
     payload = [
-        {"address": "10.0.0.5:8080", "num_requests": 3, "fails": 0},
-        {"address": "10.0.0.6:9000", "num_requests": 0, "fails": 1},
+        {"address": "localhost:8080", "num_requests": 3, "fails": 0},
+        {"address": "localhost:9000", "num_requests": 0, "fails": 1},
     ]
 
     async def fake_request(method, path, **kw):
@@ -264,7 +294,7 @@ async def test_list_upstreams_success(monkeypatch):
     upstreams = result["result"]
     assert isinstance(upstreams, list)
     assert len(upstreams) == 2
-    assert upstreams[0]["address"] == "10.0.0.5:8080"
+    assert upstreams[0]["address"] == "localhost:8080"
     assert upstreams[1]["fails"] == 1
 
 
@@ -295,35 +325,30 @@ async def test_list_upstreams_error(monkeypatch):
 # get_certificates
 # ---------------------------------------------------------------------------
 
-_TLS_CONFIG = {
-    "apps": {
-        "tls": {
-            "automation": {
-                "policies": [
-                    {
-                        "subjects": ["example.com", "www.example.com"],
-                        "issuers": [
-                            {
-                                "module": "acme",
-                                "ca": "https://acme-v02.api.letsencrypt.org/directory",
-                                "email": "admin@example.com",
-                            }
-                        ],
-                    },
-                    {
-                        "subjects": ["internal.example.com"],
-                        "issuers": [{"module": "acme", "ca": "https://acme.zerossl.com/v2/DV90"}],
-                    },
-                ]
+# get_certificates queries GET /config/apps/tls/automation/policies, which
+# returns the policies array directly (or 404 when the path is absent).
+_TLS_POLICIES = [
+    {
+        "subjects": ["example.com", "www.example.com"],
+        "issuers": [
+            {
+                "module": "acme",
+                "ca": "https://acme-v02.api.letsencrypt.org/directory",
+                "email": "admin@example.com",
             }
-        }
-    }
-}
+        ],
+    },
+    {
+        "subjects": ["internal.example.com"],
+        "issuers": [{"module": "acme", "ca": "https://acme.zerossl.com/v2/DV90"}],
+    },
+]
 
 
 async def test_get_certificates_success(monkeypatch):
     async def fake_request(method, path, **kw):
-        return make_response(200, _TLS_CONFIG)
+        assert path == "/config/apps/tls/automation/policies"
+        return make_response(200, _TLS_POLICIES)
 
     import mcp_caddy.server as srv
     monkeypatch.setattr(srv, "_request", fake_request)
@@ -338,10 +363,10 @@ async def test_get_certificates_success(monkeypatch):
     assert certs[0]["issuers"][0]["email"] == "admin@example.com"
 
 
-async def test_get_certificates_no_tls_app(monkeypatch):
-    """Returns empty list when config has no tls app."""
+async def test_get_certificates_no_tls_policies(monkeypatch):
+    """Returns empty list when the policies path is absent (404)."""
     async def fake_request(method, path, **kw):
-        return make_response(200, {"apps": {"http": {}}})
+        return make_response(404, {"error": "not found"})
 
     import mcp_caddy.server as srv
     monkeypatch.setattr(srv, "_request", fake_request)
@@ -350,10 +375,10 @@ async def test_get_certificates_no_tls_app(monkeypatch):
     assert result["result"] == []
 
 
-async def test_get_certificates_no_policies(monkeypatch):
-    """Returns empty list when tls app has no automation policies."""
+async def test_get_certificates_empty_policies(monkeypatch):
+    """Returns empty list when automation has no policies (null body)."""
     async def fake_request(method, path, **kw):
-        return make_response(200, {"apps": {"tls": {"automation": {}}}})
+        return make_response(200, None)
 
     import mcp_caddy.server as srv
     monkeypatch.setattr(srv, "_request", fake_request)
@@ -385,7 +410,9 @@ async def test_adapt_config_success(monkeypatch):
     async def fake_request(method, path, **kw):
         assert method == "POST"
         assert path == "/adapt"
-        assert kw.get("json") == {"adapter": "caddyfile", "body": caddyfile}
+        assert kw.get("params") == {"adapter": "caddyfile"}
+        assert kw.get("content") == caddyfile.encode()
+        assert kw.get("headers", {}).get("Content-Type") == "text/caddyfile"
         return make_response(200, adapted)
 
     import mcp_caddy.server as srv

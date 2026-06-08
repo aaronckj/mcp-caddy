@@ -7,11 +7,22 @@ import ipaddress
 import json
 import os
 import re
+from typing import Any, Dict, Optional
 
 import httpx
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("caddy")
+
+__version__ = "0.2.0"
+
+class CaddyError(Exception):
+    """Custom exception for Caddy MCP errors."""
+    def __init__(self, message: str, error_code: str = "UNKNOWN_ERROR", details: Optional[Dict] = None):
+        self.message = message
+        self.error_code = error_code
+        self.details = details or {}
+        super().__init__(self.message)
 
 _DEFAULT_HOST = "http://localhost:2019"
 _DEFAULT_TIMEOUT = 30.0
@@ -58,6 +69,7 @@ async def _request(method: str, path: str, **kwargs) -> httpx.Response:
 
 
 def _err(e: Exception, tool: str) -> dict:
+    """Standardized error response. Includes HTTP status and body for httpx errors."""
     out: dict = {"error": str(e), "tool": tool, "detail": type(e).__name__}
     if isinstance(e, httpx.HTTPStatusError):
         out["status"] = e.response.status_code
@@ -66,6 +78,18 @@ def _err(e: Exception, tool: str) -> dict:
         except Exception:
             out["body"] = e.response.text[:500]
     return out
+
+
+@mcp.tool()
+async def server_version() -> dict:
+    """Get the version of this MCP server instance."""
+    return {"name": "mcp-caddy", "version": __version__}
+
+
+@mcp.tool()
+async def health_check() -> dict:
+    """Health check endpoint for container monitoring."""
+    return {"status": "healthy", "service": "caddy"}
 
 
 @mcp.tool()
@@ -268,10 +292,22 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_reverse_proxy_route"}
     upstream = upstream.strip()
-    if err := _validate_upstream_dial(upstream):
+    err = _validate_upstream_dial(upstream)
+    if err:
         return {"error": err, "tool": "add_reverse_proxy_route"}
+    
+    # Validate host format (basic DNS validation)
+    if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$', host):
+        return {"error": f"Invalid host format '{host}': must be valid DNS name", "tool": "add_reverse_proxy_route"}
+    
     if health_interval and health_interval.strip() and (not health_path or not health_path.strip()):
         return {"error": "health_interval requires health_path to be set", "tool": "add_reverse_proxy_route"}
+        
+    # Validate health_interval format if provided
+    if health_interval and health_interval.strip():
+        err = _validate_go_duration(health_interval.strip(), "health_interval")
+        if err:
+            return {"error": err, "tool": "add_reverse_proxy_route"}
     try:
         if not server_name:
             resp = await _request("GET", "/config/apps/http/servers")
@@ -291,7 +327,8 @@ async def add_reverse_proxy_route(host: str, upstream: str, server_name: str = "
         if health_path and health_path.strip():
             handler["health_checks"] = {"active": {"uri": health_path.strip()}}
             if health_interval and health_interval.strip():
-                if err := _validate_go_duration(health_interval.strip(), "health_interval"):
+                err = _validate_go_duration(health_interval.strip(), "health_interval")
+                if err:
                     return {"error": err, "tool": "add_reverse_proxy_route"}
                 handler["health_checks"]["active"]["interval"] = health_interval.strip()
         route = {
@@ -324,7 +361,8 @@ async def add_path_route(path: str, upstream: str, server_name: str = "") -> dic
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_path_route"}
     upstream = upstream.strip()
-    if err := _validate_upstream_dial(upstream):
+    err = _validate_upstream_dial(upstream)
+    if err:
         return {"error": err, "tool": "add_path_route"}
     try:
         if not server_name:
@@ -506,7 +544,7 @@ async def list_upstreams() -> dict:
 
 @mcp.tool()
 async def mark_upstream_health(upstream_address: str, healthy: bool) -> dict:
-    """Manually override the health state of a reverse proxy upstream. upstream_address: the dial address as shown by list_upstreams (e.g. '10.0.0.5:8080'). healthy: True to mark healthy, False to mark unhealthy. Persists until Caddy's active health checks re-evaluate or the server restarts."""
+    """Manually override the health state of a reverse proxy upstream. upstream_address: the dial address as shown by list_upstreams (e.g. 'localhost:8080'). healthy: True to mark healthy, False to mark unhealthy. Persists until Caddy's active health checks re-evaluate or the server restarts."""
     if not upstream_address or not upstream_address.strip():
         return {"error": "upstream_address must not be empty", "tool": "mark_upstream_health"}
     upstream_address = upstream_address.strip()
@@ -951,7 +989,7 @@ async def get_pki_ca(ca_name: str) -> dict:
 
 @mcp.tool()
 async def update_upstream(server_name: str, route_index: int, new_upstream: str) -> dict:
-    """Update the backend dial address for a reverse proxy route. Fetches the route, replaces all upstream dial addresses, and PATCHes in-place. Use list_routes to find server_name and route_index. new_upstream: e.g. 'localhost:8080' or '10.0.0.5:3000'."""
+    """Update the backend dial address for a reverse proxy route. Fetches the route, replaces all upstream dial addresses, and PATCHes in-place. Use list_routes to find server_name and route_index. new_upstream: e.g. 'localhost:8080' or 'backend.example:3000'."""
     if not server_name or not server_name.strip():
         return {"error": "server_name must not be empty", "tool": "update_upstream"}
     server_name = server_name.strip()
@@ -960,7 +998,8 @@ async def update_upstream(server_name: str, route_index: int, new_upstream: str)
     if not new_upstream or not new_upstream.strip():
         return {"error": "new_upstream must not be empty", "tool": "update_upstream"}
     new_upstream = new_upstream.strip()
-    if err := _validate_upstream_dial(new_upstream):
+    err = _validate_upstream_dial(new_upstream)
+    if err:
         return {"error": err, "tool": "update_upstream"}
     try:
         resp = await _request("GET", f"/config/apps/http/servers/{server_name}/routes/{route_index}")
@@ -1041,7 +1080,8 @@ async def add_basicauth_route(host: str, username: str, hashed_password: str, up
     if not re.match(r'^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$', hashed_password):
         return {"error": "hashed_password must be a valid bcrypt hash (e.g. from: caddy hash-password --plaintext 'pw')", "tool": "add_basicauth_route"}
     if upstream and upstream.strip():
-        if err := _validate_upstream_dial(upstream.strip()):
+        err = _validate_upstream_dial(upstream.strip())
+        if err:
             return {"error": err, "tool": "add_basicauth_route"}
     try:
         if not server_name:
@@ -1123,7 +1163,8 @@ async def add_rewrite_route(host: str, path_prefix: str, upstream: str, server_n
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_rewrite_route"}
     upstream = upstream.strip()
-    if err := _validate_upstream_dial(upstream):
+    err = _validate_upstream_dial(upstream)
+    if err:
         return {"error": err, "tool": "add_rewrite_route"}
     prefix = path_prefix.strip().rstrip("/")
     if not prefix.startswith("/"):
@@ -1390,7 +1431,7 @@ async def delete_route_by_host(host: str, server_name: str = "") -> dict:
 
 @mcp.tool()
 async def add_ip_filter_route(host: str, upstream: str, allowed_ips: str, server_name: str = "") -> dict:
-    """Add a reverse proxy route that only allows requests from specific IP addresses or CIDR ranges. Requests from other IPs receive a 403. host: domain to match. upstream: backend address. allowed_ips: comma-separated IPs or CIDRs (e.g., '192.168.1.0/24,10.0.0.5'). server_name: auto-detects first server if empty."""
+    """Add a reverse proxy route that only allows requests from specific IP addresses or CIDR ranges. Requests from other IPs receive a 403. host: domain to match. upstream: backend address. allowed_ips: comma-separated IPs or CIDRs (e.g., '192.168.1.0/24,192.0.2.10'). server_name: auto-detects first server if empty."""
     if not host or not host.strip():
         return {"error": "host must not be empty", "tool": "add_ip_filter_route"}
     host = host.strip()
@@ -1549,7 +1590,8 @@ async def add_load_balanced_route(host: str, upstreams: str, lb_policy: str = "r
     if len(upstream_list) < 2:
         return {"error": "add_load_balanced_route requires at least 2 upstreams. Use add_reverse_proxy_route for a single backend.", "tool": "add_load_balanced_route"}
     for u in upstream_list:
-        if err := _validate_upstream_dial(u):
+        err = _validate_upstream_dial(u)
+        if err:
             return {"error": err, "tool": "add_load_balanced_route"}
     _VALID_POLICIES = {"round_robin", "least_conn", "ip_hash", "first", "random", "random_choose", "cookie"}
     lb_policy = lb_policy.strip().lower()
@@ -1627,7 +1669,8 @@ async def add_websocket_route(host: str, upstream: str, server_name: str = "", p
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_websocket_route"}
     upstream = upstream.strip()
-    if err := _validate_upstream_dial(upstream):
+    err = _validate_upstream_dial(upstream)
+    if err:
         return {"error": err, "tool": "add_websocket_route"}
     try:
         if not server_name:
@@ -1671,7 +1714,8 @@ async def add_php_fastcgi_route(host: str, php_fpm_address: str = "127.0.0.1:900
     if not php_fpm_address or not php_fpm_address.strip():
         return {"error": "php_fpm_address must not be empty", "tool": "add_php_fastcgi_route"}
     php_fpm_address = php_fpm_address.strip()
-    if err := _validate_upstream_dial(php_fpm_address):
+    err = _validate_upstream_dial(php_fpm_address)
+    if err:
         return {"error": err, "tool": "add_php_fastcgi_route"}
     try:
         if not server_name:
@@ -1738,7 +1782,8 @@ async def set_server_timeouts(server_name: str, read_timeout: str = "", read_hea
         (write_timeout, "write_timeout"), (idle_timeout, "idle_timeout"),
     ]:
         if val and val.strip():
-            if err := _validate_go_duration(val.strip(), key):
+            err = _validate_go_duration(val.strip(), key)
+            if err:
                 return {"error": err, "tool": "set_server_timeouts"}
             timeouts[key] = val.strip()
     try:
@@ -2298,7 +2343,8 @@ async def add_grpc_route(host: str, upstream: str, server_name: str = "", path_p
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_grpc_route"}
     upstream = upstream.strip()
-    if err := _validate_upstream_dial(upstream):
+    err = _validate_upstream_dial(upstream)
+    if err:
         return {"error": err, "tool": "add_grpc_route"}
     try:
         if not server_name:
@@ -3072,13 +3118,16 @@ async def add_circuit_breaker_route(
     if not upstream or not upstream.strip():
         return {"error": "upstream must not be empty", "tool": "add_circuit_breaker_route"}
     upstream = upstream.strip()
-    if err := _validate_upstream_dial(upstream):
+    err = _validate_upstream_dial(upstream)
+    if err:
         return {"error": err, "tool": "add_circuit_breaker_route"}
     if max_fails < 1:
         return {"error": "max_fails must be at least 1", "tool": "add_circuit_breaker_route"}
-    if err := _validate_go_duration(fail_duration, "fail_duration"):
+    err = _validate_go_duration(fail_duration, "fail_duration")
+    if err:
         return {"error": err, "tool": "add_circuit_breaker_route"}
-    if err := _validate_go_duration(unhealthy_latency, "unhealthy_latency"):
+    err = _validate_go_duration(unhealthy_latency, "unhealthy_latency")
+    if err:
         return {"error": err, "tool": "add_circuit_breaker_route"}
     try:
         if not server_name:
@@ -3144,9 +3193,11 @@ async def add_active_health_check_route(
         return {"error": err, "tool": "add_active_health_check_route"}
     if expect_status < 100 or expect_status > 599:
         return {"error": "expect_status must be a valid HTTP status code (100-599)", "tool": "add_active_health_check_route"}
-    if err := _validate_go_duration(interval, "interval"):
+    err = _validate_go_duration(interval, "interval")
+    if err:
         return {"error": err, "tool": "add_active_health_check_route"}
-    if err := _validate_go_duration(timeout, "timeout"):
+    err = _validate_go_duration(timeout, "timeout")
+    if err:
         return {"error": err, "tool": "add_active_health_check_route"}
     try:
         if not server_name:
